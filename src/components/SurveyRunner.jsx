@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Loader2, Send } from "lucide-react";
 import {
   buildResponsePayload,
+  computeSurveyValues,
   getVisiblePages,
   isAnswered,
   pruneHiddenAnswers,
@@ -24,6 +25,7 @@ export default function SurveyRunner({ survey, onSubmit }) {
     .filter((question) => isAnswered(question, answers[question.id])).length;
   const progress = totalQuestions ? Math.round((answeredCount / totalQuestions) * 100) : 0;
   const isLastPage = boundedPageIndex >= visiblePages.length - 1;
+  const computedValues = useMemo(() => computeSurveyValues(survey, answers), [survey, answers]);
 
   function updateAnswer(question, nextAnswer) {
     setErrors((current) => ({ ...current, [question.id]: "" }));
@@ -96,6 +98,10 @@ export default function SurveyRunner({ survey, onSubmit }) {
           <h2>{currentPage.title}</h2>
         </div>
 
+        {boundedPageIndex === 0 && survey.computedFields?.length > 0 && (
+          <ComputedFieldsPanel fields={survey.computedFields} values={computedValues} />
+        )}
+
         {currentPage.questions.map((question) => (
           <QuestionField
             key={question.id}
@@ -150,6 +156,8 @@ function QuestionField({ question, answer = {}, error, onChange }) {
 
       {question.type === "rating" && <RatingField question={question} answer={answer} onChange={onChange} />}
 
+      {question.type === "dateParts" && <DatePartsField question={question} answer={answer} onChange={onChange} />}
+
       {question.type === "text" && (
         <input
           id={fieldId}
@@ -174,6 +182,71 @@ function QuestionField({ question, answer = {}, error, onChange }) {
 
       {error && <p className="error-text">{error}</p>}
     </fieldset>
+  );
+}
+
+function ComputedFieldsPanel({ fields, values }) {
+  return (
+    <div className="computed-panel" aria-label="自动计算信息">
+      {fields.map((field) => (
+        <div className="computed-item" key={field.id}>
+          <span>{field.label}</span>
+          <strong>{values[field.id]?.displayValue || "待填写"}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DatePartsField({ question, answer = {}, onChange }) {
+  const value = answer.value || {};
+
+  function updatePart(part, nextValue) {
+    const cleaned = nextValue.replace(/[^\d]/g, "");
+    onChange({
+      value: {
+        ...value,
+        [part]: cleaned
+      }
+    });
+  }
+
+  return (
+    <div className="date-parts" aria-label={question.title}>
+      <label>
+        年
+        <input
+          className="text-input"
+          inputMode="numeric"
+          maxLength={4}
+          value={value.year || ""}
+          placeholder="2024"
+          onChange={(event) => updatePart("year", event.target.value)}
+        />
+      </label>
+      <label>
+        月
+        <input
+          className="text-input"
+          inputMode="numeric"
+          maxLength={2}
+          value={value.month || ""}
+          placeholder="6"
+          onChange={(event) => updatePart("month", event.target.value)}
+        />
+      </label>
+      <label>
+        日
+        <input
+          className="text-input"
+          inputMode="numeric"
+          maxLength={2}
+          value={value.day || ""}
+          placeholder="21"
+          onChange={(event) => updatePart("day", event.target.value)}
+        />
+      </label>
+    </div>
   );
 }
 

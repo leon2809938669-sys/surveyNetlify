@@ -209,6 +209,45 @@ h1 {
   box-shadow: 0 0 0 3px rgba(47, 125, 109, 0.14);
 }
 
+.date-parts {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 12px;
+}
+
+.date-parts label {
+  display: grid;
+  gap: 6px;
+  color: #5d6878;
+  font-size: 13px;
+}
+
+.computed-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin: 0 0 4px;
+  padding: 14px;
+  border: 1px solid #dce7e3;
+  border-radius: 8px;
+  background: #f5fbf8;
+}
+
+.computed-item {
+  display: grid;
+  gap: 5px;
+}
+
+.computed-item span {
+  color: #637083;
+  font-size: 13px;
+}
+
+.computed-item strong {
+  color: #1e594d;
+  font-size: 18px;
+}
+
 .rating-block {
   display: grid;
   gap: 10px;
@@ -534,6 +573,10 @@ a.secondary-button {
 
   .actions {
     display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .date-parts {
     grid-template-columns: 1fr;
   }
 

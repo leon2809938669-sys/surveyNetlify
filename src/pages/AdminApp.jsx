@@ -205,7 +205,7 @@ function AdminDashboard({ token, onLogout }) {
   }
 
   function exportResponses() {
-    const rows = responses.map((row) => flattenResponse(row));
+    const rows = responses.map((row) => flattenResponse(row, selected.definition));
     const sheet = XLSX.utils.json_to_sheet(rows);
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, "responses");
@@ -358,22 +358,70 @@ function AdminDashboard({ token, onLogout }) {
   );
 }
 
-function flattenResponse(row) {
+function flattenResponse(row, definition) {
+  const questionMap = buildQuestionMap(definition);
   const output = {
-    id: row.id,
-    survey_id: row.survey_id,
-    survey_version: row.survey_version,
-    respondent_id: row.respondent_id,
-    submitted_at: row.submitted_at,
-    duration_ms: row.response?.durationMs ?? ""
+    "答卷ID": row.id,
+    "问卷ID": row.survey_id,
+    "问卷版本": row.survey_version,
+    "提交者ID": row.respondent_id,
+    "提交时间": row.submitted_at,
+    "填写时长毫秒": row.response?.durationMs ?? ""
   };
 
+  for (const field of definition?.computedFields || []) {
+    const computed = row.response?.computedValues?.[field.id];
+    output[field.label || field.id] = computed?.displayValue ?? computed?.value ?? "";
+  }
+
   for (const answer of row.response?.answers || []) {
-    output[answer.questionId] = Array.isArray(answer.value) ? answer.value.join(", ") : answer.value ?? "";
-    if (answer.textValue) {
-      output[`${answer.questionId}__text`] = JSON.stringify(answer.textValue);
+    const question = questionMap.get(answer.questionId);
+    const columnName = question?.title || answer.questionId;
+    output[columnName] = formatAnswerValue(answer, question);
+
+    const textValue = formatTextValue(answer.textValue, question);
+    if (textValue) {
+      output[`${columnName}（补充说明）`] = textValue;
     }
   }
 
   return output;
+}
+
+function buildQuestionMap(definition) {
+  const questions = definition?.pages?.flatMap((page) => page.questions || []) || [];
+  return new Map(questions.map((question) => [question.id, question]));
+}
+
+function formatAnswerValue(answer, question) {
+  if (question?.type === "dateParts") {
+    return formatDateParts(answer.value);
+  }
+
+  if (!question?.options) {
+    return Array.isArray(answer.value) ? answer.value.join(", ") : answer.value ?? "";
+  }
+
+  const labelMap = new Map(question.options.map((option) => [option.value, option.label]));
+  if (Array.isArray(answer.value)) {
+    return answer.value.map((value) => labelMap.get(value) || value).join(", ");
+  }
+  return labelMap.get(answer.value) || (answer.value ?? "");
+}
+
+function formatDateParts(value) {
+  if (!value?.year || !value?.month || !value?.day) return "";
+  const month = String(Number(value.month)).padStart(2, "0");
+  const day = String(Number(value.day)).padStart(2, "0");
+  return `${value.year}-${month}-${day}`;
+}
+
+function formatTextValue(textValue, question) {
+  if (!textValue || Object.keys(textValue).length === 0) return "";
+
+  const labelMap = new Map((question?.options || []).map((option) => [option.value, option.label]));
+  return Object.entries(textValue)
+    .filter(([, value]) => String(value || "").trim())
+    .map(([key, value]) => `${labelMap.get(key) || key}：${value}`)
+    .join("；");
 }
