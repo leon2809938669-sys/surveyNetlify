@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import * as XLSX from "xlsx";
 import {
+  ChevronDown,
+  ChevronRight,
   Copy,
   Download,
   Eye,
@@ -80,6 +82,7 @@ function AdminDashboard({ token, onLogout }) {
   const [status, setStatus] = useState("loading");
   const [message, setMessage] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");
+  const [expandedResponseId, setExpandedResponseId] = useState("");
 
   useEffect(() => {
     loadSurveys();
@@ -128,6 +131,7 @@ function AdminDashboard({ token, onLogout }) {
     setSelected(survey);
     setDefinitionText(JSON.stringify(survey.definition, null, 2));
     setResponses([]);
+    setExpandedResponseId("");
     if (survey.id) {
       loadResponses(survey.id);
     }
@@ -147,6 +151,7 @@ function AdminDashboard({ token, onLogout }) {
     setSelected(draft);
     setDefinitionText(JSON.stringify(draft.definition, null, 2));
     setResponses([]);
+    setExpandedResponseId("");
   }
 
   async function loadResponses(surveyId) {
@@ -335,6 +340,7 @@ function AdminDashboard({ token, onLogout }) {
               <table className="responses-table">
                 <thead>
                   <tr>
+                    <th></th>
                     <th>提交时间</th>
                     <th>答卷 ID</th>
                     <th>题目数</th>
@@ -342,11 +348,28 @@ function AdminDashboard({ token, onLogout }) {
                 </thead>
                 <tbody>
                   {responses.map((row) => (
-                    <tr key={row.id}>
-                      <td>{new Date(row.submitted_at).toLocaleString()}</td>
-                      <td>{row.id}</td>
-                      <td>{row.response?.answers?.length || 0}</td>
-                    </tr>
+                    <React.Fragment key={row.id}>
+                      <tr
+                        className={`response-row ${expandedResponseId === row.id ? "active" : ""}`}
+                        onClick={() => setExpandedResponseId((current) => current === row.id ? "" : row.id)}
+                      >
+                        <td>
+                          <button className="icon-button" type="button" aria-label="展开答卷">
+                            {expandedResponseId === row.id ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                          </button>
+                        </td>
+                        <td>{new Date(row.submitted_at).toLocaleString()}</td>
+                        <td>{row.id}</td>
+                        <td>{row.response?.answers?.length || 0}</td>
+                      </tr>
+                      {expandedResponseId === row.id && (
+                        <tr className="response-detail-row">
+                          <td colSpan={4}>
+                            <ResponseDetail row={row} definition={selected.definition} />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
@@ -355,6 +378,60 @@ function AdminDashboard({ token, onLogout }) {
         </section>
       )}
     </main>
+  );
+}
+
+function ResponseDetail({ row, definition }) {
+  const questionMap = buildQuestionMap(definition);
+  const computedItems = (definition?.computedFields || []).map((field) => {
+    const computed = row.response?.computedValues?.[field.id];
+    return {
+      id: field.id,
+      label: field.label || field.id,
+      value: computed?.displayValue ?? computed?.value ?? "未计算"
+    };
+  });
+
+  const answerItems = (row.response?.answers || []).map((answer) => {
+    const question = questionMap.get(answer.questionId);
+    const textValue = formatTextValue(answer.textValue, question);
+    return {
+      id: answer.questionId,
+      label: question?.title || answer.questionId,
+      value: formatAnswerValue(answer, question) || "未填写",
+      textValue
+    };
+  });
+
+  return (
+    <div className="response-detail">
+      {computedItems.length > 0 && (
+        <div className="detail-section">
+          <h3>自动计算</h3>
+          <div className="detail-grid compact">
+            {computedItems.map((item) => (
+              <div className="detail-item highlight" key={item.id}>
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="detail-section">
+        <h3>题目答案</h3>
+        <div className="detail-grid">
+          {answerItems.map((item) => (
+            <div className="detail-item" key={item.id}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              {item.textValue && <em>{item.textValue}</em>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
