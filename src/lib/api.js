@@ -32,7 +32,11 @@ export function loginAdmin(password) {
 }
 
 export function fetchPublicSurvey(slug) {
-  return request(`/public-survey?slug=${encodeURIComponent(slug)}`).then((payload) => {
+  const params = new URLSearchParams({ slug });
+  const previewToken = new URLSearchParams(window.location.search).get("previewToken");
+  if (previewToken) params.set("previewToken", previewToken);
+
+  return request(`/public-survey?${params.toString()}`).then((payload) => {
     if (!payload.survey) throw new Error("问卷加载失败：服务端没有返回 survey");
     return payload;
   });
@@ -66,4 +70,20 @@ export function deleteAdminSurvey(token, id) {
 
 export function fetchAdminResponses(token, surveyId) {
   return request(`/admin-responses?surveyId=${encodeURIComponent(surveyId)}`, { token });
+}
+
+export function deleteAdminResponses(token, surveyId, ids) {
+  return request(`/admin-responses?surveyId=${encodeURIComponent(surveyId)}`, {
+    method: "DELETE",
+    token,
+    body: { ids }
+  });
+}
+
+export function clearAdminResponses(token, surveyId) {
+  return request(`/admin-responses?surveyId=${encodeURIComponent(surveyId)}`, {
+    method: "DELETE",
+    token,
+    body: { all: true }
+  });
 }

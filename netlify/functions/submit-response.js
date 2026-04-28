@@ -1,4 +1,4 @@
-import { getSupabase, handleOptions, json, parseBody } from "./_shared.js";
+import { getSupabase, handleOptions, json, parseBody, requireAdmin } from "./_shared.js";
 
 export async function handler(event) {
   const options = handleOptions(event);
@@ -14,13 +14,24 @@ export async function handler(event) {
       return json(400, { error: "答卷缺少 surveyId" });
     }
 
+    const previewToken = response.metadata?.previewToken;
+    const isPreview = Boolean(previewToken);
+
+    if (isPreview) {
+      requireAdmin({ headers: { authorization: `Bearer ${previewToken}` } });
+    }
+
     const supabase = getSupabase();
-    const { data: survey, error: surveyError } = await supabase
+    let query = supabase
       .from("surveys")
       .select("id,status")
-      .eq("id", response.surveyId)
-      .eq("status", "published")
-      .single();
+      .eq("id", response.surveyId);
+
+    if (!isPreview) {
+      query = query.eq("status", "published");
+    }
+
+    const { data: survey, error: surveyError } = await query.single();
 
     if (surveyError || !survey) {
       return json(404, { error: "问卷不存在或不可提交" });

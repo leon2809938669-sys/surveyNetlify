@@ -14,14 +14,17 @@ import {
   Trash2
 } from "lucide-react";
 import {
+  clearAdminResponses,
   deleteAdminSurvey,
+  deleteAdminResponses,
   fetchAdminResponses,
   fetchAdminSurveys,
   loginAdmin,
   saveAdminSurvey
 } from "../lib/api";
-import { getPublicSurveyUrl } from "../lib/routes";
+import { getPreviewSurveyUrl, getPublicSurveyUrl } from "../lib/routes";
 import exampleSurvey from "../data/survey.example.json";
+import VisualSurveyEditor from "../components/VisualSurveyEditor.jsx";
 
 const TOKEN_KEY = "survey_admin_token";
 
@@ -83,6 +86,9 @@ function AdminDashboard({ token, onLogout }) {
   const [message, setMessage] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [expandedResponseId, setExpandedResponseId] = useState("");
+  const [editorMode, setEditorMode] = useState("visual");
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [selectedResponseIds, setSelectedResponseIds] = useState([]);
 
   useEffect(() => {
     loadSurveys();
@@ -102,6 +108,7 @@ function AdminDashboard({ token, onLogout }) {
   }, [selected?.slug]);
 
   const selectedPublicUrl = selected?.slug ? getPublicSurveyUrl(selected.slug) : "";
+  const selectedPreviewUrl = selected?.slug ? getPreviewSurveyUrl(selected.slug, token) : "";
   const selectedDefinition = useMemo(() => {
     try {
       return JSON.parse(definitionText);
@@ -131,7 +138,9 @@ function AdminDashboard({ token, onLogout }) {
     setSelected(survey);
     setDefinitionText(JSON.stringify(survey.definition, null, 2));
     setResponses([]);
+    setSelectedResponseIds([]);
     setExpandedResponseId("");
+    setIsEditorOpen(false);
     if (survey.id) {
       loadResponses(survey.id);
     }
@@ -141,7 +150,7 @@ function AdminDashboard({ token, onLogout }) {
     const draft = {
       id: "",
       slug: `survey-${Date.now()}`,
-      status: "draft",
+      status: "unpublished",
       definition: {
         ...exampleSurvey,
         id: `survey-${Date.now()}`,
@@ -151,13 +160,16 @@ function AdminDashboard({ token, onLogout }) {
     setSelected(draft);
     setDefinitionText(JSON.stringify(draft.definition, null, 2));
     setResponses([]);
+    setSelectedResponseIds([]);
     setExpandedResponseId("");
+    setIsEditorOpen(true);
   }
 
   async function loadResponses(surveyId) {
     try {
       const payload = await fetchAdminResponses(token, surveyId);
       setResponses(payload.responses);
+      setSelectedResponseIds([]);
     } catch (error) {
       setMessage(error.message);
     }
@@ -217,6 +229,102 @@ function AdminDashboard({ token, onLogout }) {
     XLSX.writeFile(book, `${selected.slug || "survey"}-responses.xlsx`);
   }
 
+  function updateDefinition(nextDefinition) {
+    setDefinitionText(JSON.stringify(nextDefinition, null, 2));
+  }
+
+  async function refreshResponsesAndSurveys() {
+    if (selected?.id) {
+      await loadResponses(selected.id);
+    }
+    const list = await fetchAdminSurveys(token);
+    setSurveys(list.surveys);
+  }
+
+  function toggleResponseSelection(responseId) {
+    setSelectedResponseIds((ids) =>
+      ids.includes(responseId) ? ids.filter((id) => id !== responseId) : [...ids, responseId]
+    );
+  }
+
+  function toggleAllResponses() {
+    setSelectedResponseIds((ids) => ids.length === responses.length ? [] : responses.map((response) => response.id));
+  }
+
+  async function deleteOneResponse(responseId) {
+    const confirmed = window.confirm("确认删除这份答卷？此操作不可恢复。");
+    if (!confirmed) return;
+
+    try {
+      await deleteAdminResponses(token, selected.id, [responseId]);
+      setExpandedResponseId((current) => current === responseId ? "" : current);
+      setMessage("已删除答卷");
+      await refreshResponsesAndSurveys();
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  async function deleteSelectedResponses() {
+    if (selectedResponseIds.length === 0) return;
+    const confirmed = window.confirm(`确认删除选中的 ${selectedResponseIds.length} 份答卷？此操作不可恢复。`);
+    if (!confirmed) return;
+
+    try {
+      await deleteAdminResponses(token, selected.id, selectedResponseIds);
+      setExpandedResponseId((current) => selectedResponseIds.includes(current) ? "" : current);
+      setMessage("已删除选中答卷");
+      await refreshResponsesAndSurveys();
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  async function clearAllResponses() {
+    if (responses.length === 0) return;
+    const confirmed = window.confirm(`确认清空当前问卷的全部 ${responses.length} 份答卷？此操作不可恢复。`);
+    if (!confirmed) return;
+
+    try {
+      await clearAdminResponses(token, selected.id);
+      setExpandedResponseId("");
+      setSelectedResponseIds([]);
+      setMessage("已清空全部答卷");
+      await refreshResponsesAndSurveys();
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  async function togglePublishStatus() {
+    const nextStatus = selected.status === "published" ? "unpublished" : "published";
+    setMessage("");
+    let definition;
+    try {
+      definition = JSON.parse(definitionText);
+    } catch {
+      setMessage("问卷 JSON 格式不正确，无法发布");
+      return;
+    }
+
+    try {
+      const payload = await saveAdminSurvey(token, {
+        ...selected,
+        status: nextStatus,
+        definition,
+        title: definition.title,
+        description: definition.description
+      });
+      setSelected(payload.survey);
+      setDefinitionText(JSON.stringify(payload.survey.definition, null, 2));
+      const list = await fetchAdminSurveys(token);
+      setSurveys(list.surveys);
+      setMessage(nextStatus === "published" ? "已发布" : "已关闭");
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
   return (
     <main className="admin-shell">
       <header className="admin-topbar">
@@ -254,7 +362,10 @@ function AdminDashboard({ token, onLogout }) {
                 onClick={() => selectSurvey(survey)}
               >
                 <strong>{survey.title || survey.slug}</strong>
-                <span>{survey.status} · {survey.responseCount || 0} 份答卷</span>
+                <span>
+                  <StatusBadge status={survey.status} />
+                  {survey.responseCount || 0} 份答卷
+                </span>
               </button>
             ))}
           </aside>
@@ -269,48 +380,89 @@ function AdminDashboard({ token, onLogout }) {
                   onChange={(event) => setSelected({ ...selected, slug: event.target.value })}
                 />
               </label>
-              <label>
-                状态
-                <select
-                  className="text-input"
-                  value={selected.status}
-                  onChange={(event) => setSelected({ ...selected, status: event.target.value })}
+              <div className="status-control">
+                <span>发布状态</span>
+                <StatusBadge status={selected.status} />
+                <button
+                  className={selected.status === "published" ? "danger-button" : "success-button"}
+                  type="button"
+                  onClick={togglePublishStatus}
                 >
-                  <option value="draft">draft</option>
-                  <option value="published">published</option>
-                  <option value="closed">closed</option>
-                </select>
-              </label>
+                  {selected.status === "published" ? "关闭" : "发布"}
+                </button>
+              </div>
             </div>
 
-            <label className="json-editor-label">
-              问卷 JSON
-              <textarea
-                className="json-editor"
-                value={definitionText}
-                spellCheck={false}
-                onChange={(event) => setDefinitionText(event.target.value)}
-              />
-            </label>
-
-            <div className="admin-actions">
-              <button className="primary-button" type="button" onClick={saveSurvey}>
-                <Save size={18} />
-                保存
-              </button>
-              <button className="secondary-button" type="button" onClick={removeSurvey} disabled={!selected.id}>
-                <Trash2 size={18} />
-                删除
+            <div className="editor-collapsed-bar">
+              <div>
+                <h2>{selectedDefinition?.title || selected.title || selected.slug}</h2>
+                <p className="muted-text">{selectedDefinition?.description || "点击编辑问卷，切换可视化或 JSON 模式修改内容。"}</p>
+              </div>
+              <button className="primary-button" type="button" onClick={() => setIsEditorOpen((open) => !open)}>
+                {isEditorOpen ? "收起编辑" : "编辑问卷"}
               </button>
             </div>
+
+            {isEditorOpen && (
+              <>
+                <div className="editor-modebar">
+                  <div className="segmented-control" aria-label="编辑模式">
+                    <button
+                      className={editorMode === "visual" ? "active" : ""}
+                      type="button"
+                      onClick={() => setEditorMode("visual")}
+                    >
+                      可视化编辑
+                    </button>
+                    <button
+                      className={editorMode === "json" ? "active" : ""}
+                      type="button"
+                      onClick={() => setEditorMode("json")}
+                    >
+                      JSON
+                    </button>
+                  </div>
+                  <span className="muted-text">两种模式编辑同一份问卷定义</span>
+                </div>
+
+                {editorMode === "visual" ? (
+                  selectedDefinition ? (
+                    <VisualSurveyEditor definition={selectedDefinition} onChange={updateDefinition} />
+                  ) : (
+                    <div className="visual-editor-block form-error">JSON 尚未通过解析，无法进入可视化编辑。</div>
+                  )
+                ) : (
+                  <label className="json-editor-label">
+                    问卷 JSON
+                    <textarea
+                      className="json-editor"
+                      value={definitionText}
+                      spellCheck={false}
+                      onChange={(event) => setDefinitionText(event.target.value)}
+                    />
+                  </label>
+                )}
+
+                <div className="admin-actions">
+                  <button className="primary-button" type="button" onClick={saveSurvey}>
+                    <Save size={18} />
+                    保存
+                  </button>
+                  <button className="secondary-button" type="button" onClick={removeSurvey} disabled={!selected.id}>
+                    <Trash2 size={18} />
+                    删除
+                  </button>
+                </div>
+              </>
+            )}
 
             {message && <p className="admin-message">{message}</p>}
-            {!selectedDefinition && <p className="error-text">JSON 尚未通过解析</p>}
+            {isEditorOpen && !selectedDefinition && <p className="error-text">JSON 尚未通过解析</p>}
           </section>
 
           <aside className="admin-panel share-panel">
             <h2>发布入口</h2>
-            <p className="muted-text">状态为 published 后，被调查者可访问。</p>
+            <p className="muted-text">发布后，被调查者可访问公开链接；预览不受发布状态限制。</p>
             {qrDataUrl && <img className="qr-code" src={qrDataUrl} alt="问卷二维码" />}
             <div className="public-url">{selectedPublicUrl}</div>
             <div className="admin-actions">
@@ -318,7 +470,7 @@ function AdminDashboard({ token, onLogout }) {
                 <Copy size={18} />
                 复制
               </button>
-              <a className="secondary-button" href={selectedPublicUrl} target="_blank" rel="noreferrer">
+              <a className="secondary-button" href={selectedPreviewUrl} target="_blank" rel="noreferrer">
                 <Eye size={18} />
                 预览
               </a>
@@ -329,21 +481,40 @@ function AdminDashboard({ token, onLogout }) {
             <div className="responses-header">
               <div>
                 <h2>答卷</h2>
-                <p className="muted-text">{responses.length} 份</p>
+                <p className="muted-text">{responses.length} 份 · 已选 {selectedResponseIds.length} 份</p>
               </div>
-              <button className="primary-button" type="button" onClick={exportResponses} disabled={responses.length === 0}>
-                <Download size={18} />
-                导出 xlsx
-              </button>
+              <div className="response-actions">
+                <button className="secondary-button" type="button" onClick={deleteSelectedResponses} disabled={selectedResponseIds.length === 0}>
+                  <Trash2 size={18} />
+                  删除所选
+                </button>
+                <button className="secondary-button danger" type="button" onClick={clearAllResponses} disabled={responses.length === 0}>
+                  <Trash2 size={18} />
+                  清空全部
+                </button>
+                <button className="primary-button" type="button" onClick={exportResponses} disabled={responses.length === 0}>
+                  <Download size={18} />
+                  导出 xlsx
+                </button>
+              </div>
             </div>
             <div className="responses-table-wrap">
               <table className="responses-table">
                 <thead>
                   <tr>
+                    <th>
+                      <input
+                        type="checkbox"
+                        checked={responses.length > 0 && selectedResponseIds.length === responses.length}
+                        onChange={toggleAllResponses}
+                        aria-label="选择全部答卷"
+                      />
+                    </th>
                     <th></th>
                     <th>提交时间</th>
                     <th>答卷 ID</th>
                     <th>题目数</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -353,6 +524,14 @@ function AdminDashboard({ token, onLogout }) {
                         className={`response-row ${expandedResponseId === row.id ? "active" : ""}`}
                         onClick={() => setExpandedResponseId((current) => current === row.id ? "" : row.id)}
                       >
+                        <td onClick={(event) => event.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedResponseIds.includes(row.id)}
+                            onChange={() => toggleResponseSelection(row.id)}
+                            aria-label="选择答卷"
+                          />
+                        </td>
                         <td>
                           <button className="icon-button" type="button" aria-label="展开答卷">
                             {expandedResponseId === row.id ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
@@ -361,10 +540,15 @@ function AdminDashboard({ token, onLogout }) {
                         <td>{new Date(row.submitted_at).toLocaleString()}</td>
                         <td>{row.id}</td>
                         <td>{row.response?.answers?.length || 0}</td>
+                        <td onClick={(event) => event.stopPropagation()}>
+                          <button className="icon-button danger" type="button" onClick={() => deleteOneResponse(row.id)} aria-label="删除答卷">
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
                       </tr>
                       {expandedResponseId === row.id && (
                         <tr className="response-detail-row">
-                          <td colSpan={4}>
+                          <td colSpan={6}>
                             <ResponseDetail row={row} definition={selected.definition} />
                           </td>
                         </tr>
@@ -379,6 +563,11 @@ function AdminDashboard({ token, onLogout }) {
       )}
     </main>
   );
+}
+
+function StatusBadge({ status }) {
+  const isPublished = status === "published";
+  return <span className={`status-badge ${isPublished ? "published" : "unpublished"}`}>{isPublished ? "已发布" : "未发布"}</span>;
 }
 
 function ResponseDetail({ row, definition }) {

@@ -16,3 +16,9 @@ export function getRoute() {
 export function getPublicSurveyUrl(slug) {
   return `${window.location.origin}/s/${encodeURIComponent(slug)}`;
 }
+
+export function getPreviewSurveyUrl(slug, token) {
+  const url = new URL(getPublicSurveyUrl(slug));
+  url.searchParams.set("previewToken", token);
+  return url.toString();
+}

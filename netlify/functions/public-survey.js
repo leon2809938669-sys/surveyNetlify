@@ -1,4 +1,4 @@
-import { getSupabase, handleOptions, json } from "./_shared.js";
+import { getSupabase, handleOptions, json, requireAdmin } from "./_shared.js";
 
 export async function handler(event) {
   const options = handleOptions(event);
@@ -7,17 +7,25 @@ export async function handler(event) {
   try {
     const slug = event.queryStringParameters?.slug;
     if (!slug) return json(400, { error: "缺少问卷 slug" });
+    const previewToken = event.queryStringParameters?.previewToken;
+    const isPreview = Boolean(previewToken);
 
     const supabase = getSupabase();
-    const { data, error } = await supabase
+    let query = supabase
       .from("surveys")
       .select("*")
-      .eq("slug", slug)
-      .eq("status", "published")
-      .single();
+      .eq("slug", slug);
+
+    if (isPreview) {
+      requireAdmin({ headers: { authorization: `Bearer ${previewToken}` } });
+    } else {
+      query = query.eq("status", "published");
+    }
+
+    const { data, error } = await query.single();
 
     if (error || !data) {
-      return json(404, { error: "问卷不存在或尚未发布" });
+      return json(404, { error: isPreview ? "问卷不存在" : "问卷不存在或尚未发布" });
     }
 
     return json(200, {

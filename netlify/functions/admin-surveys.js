@@ -31,7 +31,7 @@ export async function handler(event) {
       const definition = survey.definition;
       const row = {
         slug: survey.slug,
-        status: survey.status || "draft",
+        status: survey.status === "published" ? "published" : "unpublished",
         title: definition.title || survey.title || survey.slug,
         description: definition.description || survey.description || "",
         version: Number(definition.version || survey.version || 1),

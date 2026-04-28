@@ -6,6 +6,7 @@ export default function PublicSurveyPage({ slug }) {
   const [survey, setSurvey] = useState(null);
   const [status, setStatus] = useState("loading");
   const [message, setMessage] = useState("");
+  const previewToken = new URLSearchParams(window.location.search).get("previewToken");
 
   useEffect(() => {
     let alive = true;
@@ -40,7 +41,17 @@ export default function PublicSurveyPage({ slug }) {
               <p>{survey.description}</p>
             </div>
           </section>
-          <SurveyRunner survey={survey} onSubmit={submitPublicResponse} />
+          <SurveyRunner
+            survey={survey}
+            onSubmit={(response) => submitPublicResponse({
+              ...response,
+              metadata: {
+                ...response.metadata,
+                previewToken,
+                isPreview: Boolean(previewToken)
+              }
+            })}
+          />
         </>
       )}
     </main>

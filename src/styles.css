@@ -321,6 +321,27 @@ h1 {
   color: #ffffff;
 }
 
+.success-button,
+.danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0 14px;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.success-button {
+  background: #2f7d6d;
+}
+
+.danger-button {
+  background: #b84545;
+}
+
 .secondary-button {
   border-color: #d6dde8;
   background: #ffffff;
@@ -423,6 +444,9 @@ h1 {
 
 .survey-list-item span,
 .muted-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   color: #687385;
   font-size: 13px;
 }
@@ -447,6 +471,41 @@ h1 {
   font-weight: 700;
 }
 
+.status-control {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+
+.status-control > span:first-child {
+  color: #5d6878;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.status-badge.published {
+  background: #e8f6f1;
+  color: #236657;
+}
+
+.status-badge.unpublished {
+  background: #f8eeee;
+  color: #a33c3c;
+}
+
 .json-editor {
   width: 100%;
   min-height: 580px;
@@ -465,6 +524,196 @@ h1 {
   box-shadow: 0 0 0 3px rgba(47, 125, 109, 0.14);
 }
 
+.editor-modebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.segmented-control {
+  display: inline-flex;
+  border: 1px solid #d6dde8;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.segmented-control button {
+  min-height: 38px;
+  border: 0;
+  border-right: 1px solid #d6dde8;
+  padding: 0 14px;
+  background: #ffffff;
+  color: #334157;
+  cursor: pointer;
+}
+
+.segmented-control button:last-child {
+  border-right: 0;
+}
+
+.segmented-control button.active {
+  background: #2f7d6d;
+  color: #ffffff;
+}
+
+.visual-editor {
+  display: grid;
+  gap: 16px;
+}
+
+.visual-editor-block {
+  border: 1px solid #e0e5ec;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fbfcfd;
+}
+
+.visual-editor-block h3,
+.visual-section-title h3 {
+  margin: 0 0 14px;
+  color: #263246;
+  font-size: 18px;
+}
+
+.visual-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.visual-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.visual-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.visual-grid.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.visual-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: #344154;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.visual-field > span {
+  color: #5d6878;
+  font-size: 13px;
+}
+
+.text-area.compact {
+  min-height: 82px;
+  resize: vertical;
+}
+
+.visual-section-title,
+.page-editor-header,
+.question-editor-header,
+.nested-editor-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.page-editor-header {
+  align-items: flex-end;
+  margin-bottom: 14px;
+}
+
+.question-editor-list {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.question-editor {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #dfe6ee;
+  border-radius: 8px;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.question-editor-header strong {
+  color: #18202f;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.nested-editor {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #edf0f4;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfd;
+}
+
+.nested-editor-title span {
+  color: #344154;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.option-editor-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.8fr) minmax(160px, 1.2fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.option-text-placeholder {
+  grid-column: 2 / 5;
+}
+
+.checkbox-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: end;
+  min-height: 44px;
+  color: #334157;
+  font-size: 14px;
+}
+
+.checkbox-field.compact {
+  align-self: center;
+  min-height: 0;
+  white-space: nowrap;
+}
+
+.checkbox-field input {
+  width: 17px;
+  height: 17px;
+  accent-color: #2f7d6d;
+}
+
+.secondary-button.small {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.secondary-button.danger,
+.icon-button.danger {
+  color: #a33c3c;
+}
+
+.secondary-button.danger {
+  border-color: #e6caca;
+  background: #fff8f8;
+}
+
 .admin-actions {
   display: flex;
   flex-wrap: wrap;
@@ -476,6 +725,50 @@ h1 {
   margin: 12px 0 0;
   color: #2f7d6d;
   font-size: 14px;
+}
+
+.editor-collapsed-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  border: 1px solid #dfe6ee;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fbfcfd;
+}
+
+.editor-collapsed-bar > div {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.editor-collapsed-bar h2 {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: #263246;
+  font-size: 20px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-collapsed-bar p {
+  min-width: 0;
+  margin: 0;
+  line-height: 1.55;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-collapsed-bar .primary-button {
+  flex: 0 0 auto;
 }
 
 .share-panel h2,
@@ -515,6 +808,13 @@ h1 {
   margin-bottom: 14px;
 }
 
+.response-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .responses-table-wrap {
   overflow-x: auto;
 }
@@ -531,6 +831,12 @@ h1 {
   padding: 10px;
   text-align: left;
   white-space: nowrap;
+}
+
+.responses-table input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  accent-color: #2f7d6d;
 }
 
 .responses-table th {
@@ -685,5 +991,32 @@ a.secondary-button {
 
   .editor-grid {
     grid-template-columns: 1fr;
+  }
+
+  .editor-modebar,
+  .editor-collapsed-bar,
+  .visual-section-title,
+  .page-editor-header {
+    display: grid;
+  }
+
+  .editor-collapsed-bar > div {
+    display: grid;
+  }
+
+  .editor-collapsed-bar p,
+  .editor-collapsed-bar h2 {
+    white-space: normal;
+  }
+
+  .visual-grid.two,
+  .visual-grid.three,
+  .visual-grid.four,
+  .option-editor-row {
+    grid-template-columns: 1fr;
+  }
+
+  .option-text-placeholder {
+    grid-column: auto;
   }
 }

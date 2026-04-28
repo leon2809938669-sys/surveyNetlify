@@ -84,7 +84,7 @@ export function normalizeSurvey(row) {
   return {
     id: row.id,
     slug: row.slug,
-    status: row.status,
+    status: row.status === "published" ? "published" : "unpublished",
     title: row.title,
     description: row.description,
     version: row.version,
