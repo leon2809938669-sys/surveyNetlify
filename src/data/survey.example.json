@@ -1,0 +1,138 @@
+{
+  "schema": "custom-survey.v1",
+  "id": "customer-feedback-2026",
+  "version": 1,
+  "title": "产品体验反馈",
+  "description": "帮助我们了解当前产品体验。",
+  "submitButtonText": "提交问卷",
+  "pages": [
+    {
+      "id": "profile",
+      "title": "基本情况",
+      "questions": [
+        {
+          "id": "role",
+          "type": "singleChoice",
+          "title": "你主要以什么身份使用我们的产品？",
+          "required": true,
+          "options": [
+            { "value": "founder", "label": "创业者 / 管理者" },
+            { "value": "operator", "label": "运营或业务人员" },
+            { "value": "developer", "label": "开发者" },
+            { "value": "other", "label": "其他", "allowText": true, "textPlaceholder": "请填写身份" }
+          ]
+        },
+        {
+          "id": "company_size",
+          "type": "singleChoice",
+          "title": "你的团队规模是？",
+          "required": false,
+          "options": [
+            { "value": "1", "label": "只有我" },
+            { "value": "2-10", "label": "2-10 人" },
+            { "value": "11-50", "label": "11-50 人" },
+            { "value": "50+", "label": "50 人以上" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "experience",
+      "title": "使用体验",
+      "questions": [
+        {
+          "id": "satisfaction",
+          "type": "rating",
+          "title": "你对当前体验的整体满意度是多少？",
+          "required": true,
+          "scale": { "min": 1, "max": 5, "minLabel": "很不满意", "maxLabel": "非常满意" }
+        },
+        {
+          "id": "low_score_reason",
+          "type": "multipleChoice",
+          "title": "哪些问题影响了你的体验？",
+          "required": true,
+          "visibleIf": {
+            "questionId": "satisfaction",
+            "operator": "lte",
+            "value": 3
+          },
+          "options": [
+            { "value": "hard_to_use", "label": "操作复杂" },
+            { "value": "missing_features", "label": "功能不够" },
+            { "value": "performance", "label": "速度或稳定性问题" },
+            { "value": "other", "label": "其他", "allowText": true, "textPlaceholder": "请补充说明" }
+          ],
+          "validation": { "minSelected": 1, "maxSelected": 3 }
+        },
+        {
+          "id": "developer_followup",
+          "type": "textarea",
+          "title": "作为开发者，你希望我们优先开放哪些接口或集成？",
+          "required": false,
+          "visibleIf": {
+            "questionId": "role",
+            "operator": "equals",
+            "value": "developer"
+          },
+          "placeholder": "例如 API、Webhook、SDK、权限模型等"
+        },
+        {
+          "id": "favorite_features",
+          "type": "multipleChoice",
+          "title": "你最看重哪些能力？",
+          "required": true,
+          "options": [
+            { "value": "ease_of_use", "label": "上手简单" },
+            { "value": "automation", "label": "自动化流程" },
+            { "value": "analytics", "label": "数据分析" },
+            { "value": "integration", "label": "能接入现有系统" },
+            { "value": "other", "label": "其他", "allowText": true, "textPlaceholder": "请填写能力" }
+          ],
+          "validation": { "minSelected": 1, "maxSelected": 2 }
+        },
+        {
+          "id": "feature_detail",
+          "type": "textarea",
+          "title": "关于你选择的能力，可以再具体说说使用场景吗？",
+          "required": false,
+          "visibleIf": {
+            "questionId": "favorite_features",
+            "operator": "includes",
+            "value": "integration"
+          }
+        }
+      ]
+    },
+    {
+      "id": "contact",
+      "title": "后续联系",
+      "questions": [
+        {
+          "id": "contact_allowed",
+          "type": "singleChoice",
+          "title": "是否愿意接受后续访谈？",
+          "required": true,
+          "options": [
+            { "value": "yes", "label": "可以" },
+            { "value": "no", "label": "暂时不用" }
+          ]
+        },
+        {
+          "id": "email",
+          "type": "text",
+          "inputMode": "email",
+          "title": "请留下邮箱",
+          "required": true,
+          "visibleIf": {
+            "questionId": "contact_allowed",
+            "operator": "equals",
+            "value": "yes"
+          },
+          "placeholder": "name@example.com",
+          "validation": { "pattern": "^\\S+@\\S+\\.\\S+$", "message": "请输入有效邮箱" }
+        }
+      ]
+    }
+  ]
+}

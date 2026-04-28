@@ -1,0 +1,49 @@
+{
+  "schema": "custom-survey-response.v1",
+  "surveyId": "customer-feedback-2026",
+  "surveyVersion": 1,
+  "respondent": {
+    "id": "anonymous-uuid-or-user-id",
+    "source": "public-link",
+    "userAgent": "browser user agent",
+    "locale": "zh-CN"
+  },
+  "startedAt": "2026-04-28T08:00:00.000Z",
+  "submittedAt": "2026-04-28T08:03:12.000Z",
+  "durationMs": 192000,
+  "status": "completed",
+  "answers": [
+    {
+      "questionId": "role",
+      "type": "singleChoice",
+      "value": "developer",
+      "textValue": null
+    },
+    {
+      "questionId": "satisfaction",
+      "type": "rating",
+      "value": 3
+    },
+    {
+      "questionId": "low_score_reason",
+      "type": "multipleChoice",
+      "value": ["missing_features", "other"],
+      "textValue": { "other": "需要更完整的导出能力" }
+    }
+  ],
+  "skipped": [
+    {
+      "questionId": "email",
+      "reason": "condition_not_met",
+      "condition": {
+        "questionId": "contact_allowed",
+        "operator": "equals",
+        "value": "yes"
+      }
+    }
+  ],
+  "metadata": {
+    "appVersion": "0.1.0",
+    "storage": "supabase-postgres"
+  }
+}
