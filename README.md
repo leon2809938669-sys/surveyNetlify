@@ -149,6 +149,32 @@ check (status in ('published', 'unpublished'));
 - 答卷删除：支持删除单份答卷、删除勾选的多份答卷、清空当前问卷全部答卷。
 - 数据安全：所有管理操作都通过 Netlify Functions 校验管理 token 后访问 Supabase。
 
+## Supabase Heartbeat
+
+为降低 Supabase Free Plan 因长时间无请求而暂停项目的概率，项目内置了 Netlify Scheduled Function：
+
+- 文件：`netlify/functions/heartbeat.js`
+- 频率：`@daily`
+- 操作：每天对 `surveys` 表执行一次轻量 `select id` 请求。
+
+部署到 Netlify 后，Netlify 会按计划触发该函数。也可以手动测试：
+
+```text
+https://你的站点.netlify.app/.netlify/functions/heartbeat
+```
+
+正常返回示例：
+
+```json
+{
+  "ok": true,
+  "checkedAt": "2026-05-07T00:00:00.000Z",
+  "surveyCount": 1
+}
+```
+
+这个 heartbeat 是服务端执行的，不依赖用户打开网页。浏览器端定时 fetch 只能在有人访问页面时工作，不能解决完全无人访问时的 pause 问题。
+
 ## 问卷 JSON 格式
 
 示例文件：[src/data/survey.example.json](src/data/survey.example.json)
