@@ -98,6 +98,10 @@ $$ language plpgsql;
 create trigger surveys_set_updated_at
 before update on public.surveys
 for each row execute function public.set_updated_at();
+
+grant select, insert, update, delete on table public.surveys to service_role;
+grant select, insert, update, delete on table public.survey_responses to service_role;
+grant usage, select on all sequences in schema public to service_role;
 ```
 
 可选：开启 RLS。因为本项目通过 service role 从 Netlify Functions 访问，开启 RLS 后也能正常运行：
@@ -108,6 +112,20 @@ alter table public.survey_responses enable row level security;
 ```
 
 不要给 anon key 开公开读写 policy，公开访问已经由 Netlify Functions 控制。
+
+### Supabase Data API GRANT
+
+Supabase 从 2026-05-30 起，新项目不会再默认把 `public` schema 下的新表暴露给 Data API；既有项目在 2026-10-30 后也会对新表执行这个规则。本项目的 Netlify Functions 使用 `supabase-js` 和 `SUPABASE_SERVICE_ROLE_KEY` 访问 Supabase，因此需要显式授权给 `service_role`。
+
+如果你已经建好表，请在 Supabase SQL Editor 执行：
+
+```sql
+grant select, insert, update, delete on table public.surveys to service_role;
+grant select, insert, update, delete on table public.survey_responses to service_role;
+grant usage, select on all sequences in schema public to service_role;
+```
+
+当前架构不需要给 `anon` 或 `authenticated` 授权，因为浏览器不会直接访问 Supabase 表。
 
 如果你已经按旧版本建过表，执行下面的迁移把状态改为 `published/unpublished`：
 
