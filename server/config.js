@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateProxyToken } from "./auth-logging.js";
 
 export const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 
@@ -22,6 +23,7 @@ export function getConfig() {
   return {
     password,
     secret,
+    authProxyToken: validateProxyToken(process.env.AUTH_PROXY_TOKEN || ""),
     host: process.env.HOST || "127.0.0.1",
     port,
     cookieSecure: process.env.COOKIE_SECURE === "true",

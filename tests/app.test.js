@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { test } from "node:test";
 import { createApplication } from "../server/app.js";
 import { createSession, isAdmin } from "../server/auth.js";
+import { logAuthFailure } from "../server/auth-logging.js";
 import { openDatabase } from "../server/database.js";
 
 const definition = {
@@ -14,10 +15,11 @@ const definition = {
   ] }]
 };
 
-async function harness(t) {
+async function harness(t, overrides = {}) {
   const db = openDatabase(":memory:");
-  const config = { password: "test-password-not-a-real-secret", secret: "x".repeat(64), sessionSeconds: 3600, cookieSecure: false, distPath: "/nonexistent-test-dist" };
-  const server = createServer(createApplication({ db, config }));
+  const config = { password: "test-password-not-a-real-secret", secret: "x".repeat(64), sessionSeconds: 3600, cookieSecure: false, distPath: "/nonexistent-test-dist", ...overrides };
+  const authEvents = [];
+  const server = createServer(createApplication({ db, config, authLogger: (ip) => logAuthFailure(ip, { write: (line) => authEvents.push(line) }) }));
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(async () => { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); db.close(); });
   let cookie = "";
@@ -53,7 +55,7 @@ async function harness(t) {
       skipped: [], metadata: { appVersion: "test", isPreview: false }
     };
   }
-  return { db, config, request, login, create, response };
+  return { db, config, request, login, create, response, authEvents };
 }
 
 test("health and session do not expose private configuration", async (t) => {
@@ -88,6 +90,39 @@ test("login brute force has a bounded rate limit", async (t) => {
   const h = await harness(t);
   for (let i = 0; i < 8; i += 1) assert.equal((await h.request("/api/admin-login", { method: "POST", body: { password: "wrong" } })).status, 401);
   assert.equal((await h.request("/api/admin-login", { method: "POST", body: { password: "wrong" } })).status, 429);
+  assert.equal(h.authEvents.length, 8); // A rate-limit response is not another password failure.
+});
+
+test("only a failed login emits a credential-free structured event", async (t) => {
+  const h = await harness(t);
+  assert.equal((await h.request("/api/admin-surveys")).status, 401);
+  assert.equal((await h.request("/api/admin-login", { method: "POST", raw: "{invalid" })).status, 400);
+  assert.equal((await h.request("/api/admin-login", { method: "POST", body: { password: "wrong-secret" }, headers: { Origin: "https://other.example" } })).status, 403);
+  await h.login();
+  assert.equal(h.authEvents.length, 0);
+  const result = await h.request("/api/admin-login", { method: "POST", body: { password: "wrong-secret\nforged-event" }, headers: { "X-Real-IP": "203.0.113.8", "X-Forwarded-For": "203.0.113.8" } });
+  assert.equal(result.status, 401);
+  assert.equal(h.authEvents.length, 1);
+  assert.deepEqual(JSON.parse(h.authEvents[0]), { event: "auth_failure", app: "survey", ip: "127.0.0.1", method: "password", reason: "invalid_credentials" });
+  assert.ok(!h.authEvents[0].includes("wrong-secret"));
+  assert.ok(!h.authEvents[0].includes(h.config.password));
+  assert.ok(!h.authEvents[0].includes(h.config.secret));
+});
+
+test("authenticated proxy IPs drive both logging and independent login rate limits", async (t) => {
+  const token = "test-proxy-token-" + "x".repeat(32);
+  const h = await harness(t, { authProxyToken: token });
+  const attempt = (ip, supplied = token) => h.request("/api/admin-login", {
+    method: "POST", body: { password: "wrong" }, headers: { "X-Auth-Proxy-Token": supplied, "X-Real-IP": ip }
+  });
+  for (let i = 0; i < 8; i += 1) assert.equal((await attempt("203.0.113.8")).status, 401);
+  assert.equal((await attempt("203.0.113.8")).status, 429);
+  assert.equal((await attempt("2001:DB8:0:0::8")).status, 401);
+  assert.equal((await attempt("203.0.113.9", "wrong")).status, 401);
+  assert.equal(h.authEvents.length, 10);
+  assert.equal(JSON.parse(h.authEvents[8]).ip, "2001:db8::8");
+  assert.equal(JSON.parse(h.authEvents[9]).ip, "127.0.0.1");
+  assert.ok(h.authEvents.every((line) => !line.includes(token)));
 });
 
 test("drafts and preview submissions require an admin session", async (t) => {

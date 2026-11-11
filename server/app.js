@@ -4,6 +4,7 @@ import { stat } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { checkSameOrigin, createSession, HttpError, isAdmin, matchesPassword, RateLimiter, requireAdmin, sessionCookie } from "./auth.js";
+import { clientIp, logAuthFailure } from "./auth-logging.js";
 import { decodeResponse, decodeSurvey, exportSnapshot, normalizeSurvey } from "./database.js";
 import { validateResponse, validateSurvey } from "./validation.js";
 
@@ -81,7 +82,7 @@ async function serveStatic(request, response, url, distPath) {
   await pipeline(createReadStream(chosen), response);
 }
 
-export function createApplication({ db, config }) {
+export function createApplication({ db, config, authLogger = logAuthFailure }) {
   const logins = new RateLimiter(8, 15 * 60 * 1000);
   const submissions = new RateLimiter(120, 60 * 60 * 1000);
   return async function application(request, response) {
@@ -94,7 +95,7 @@ export function createApplication({ db, config }) {
       const url = new URL(request.url, "http://localhost");
       if (!url.pathname.startsWith("/api/")) return await serveStatic(request, response, url, config.distPath);
       if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) checkSameOrigin(request);
-      const ip = request.socket.remoteAddress || "unknown";
+      const ip = clientIp(request, config.authProxyToken) || "unknown";
       const path = url.pathname;
       if (path === "/api/health") {
         allow(request, ["GET"]);
@@ -111,6 +112,7 @@ export function createApplication({ db, config }) {
         const { password } = await readBody(request);
         if (!matchesPassword(password, config.password)) {
           logins.hit(ip);
+          authLogger(ip);
           throw new HttpError(401, "管理密码不正确");
         }
         logins.clear(ip);

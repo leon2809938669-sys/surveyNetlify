@@ -44,6 +44,7 @@ npm start
 | `PORT` | 默认 `4317` |
 | `SURVEY_DB_PATH` | 默认 `.data/survey.sqlite`；正式服务使用仓库外路径 |
 | `COOKIE_SECURE` | SSH 隧道预览为 `false`；正式 HTTPS 上线必须改为 `true` |
+| `AUTH_PROXY_TOKEN` | 可选，独立的 32–128 位 URL 安全随机代理令牌；与本机 Nginx 的内部头匹配才采纳真实 IP，不是会话密钥 |
 | `ENV_FILE` | 可选，指定私有配置文件，而不是项目根目录的 `.env` |
 
 生成签名密钥：
@@ -113,7 +114,23 @@ ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
 此时二维码和分享链接只能在隧道所在本机访问，不能直接用于手机或外部受访者。
 
 正式公网发布前，配置域名、有效 TLS 证书和反向代理，把 `COOKIE_SECURE` 改为 `true`。
-后端继续保留 `127.0.0.1` 监听。当前限流按直连 IP 计算；反向代理后的大规模收集还应在代理层配置真实客户端限流。
+后端继续保留 `127.0.0.1` 监听。接入代理时配置下面的可信客户端 IP；大规模收集还应在代理层配置限流。
+
+### 登录失败事件与可信客户端 IP
+
+`survey-workspace.service` 使用 `SyslogIdentifier=survey-workspace` 写入 journal。只有 `/api/admin-login` 的密码验证失败会输出单行 JSON，供宿主机 Fail2ban 使用：
+
+```json
+{"event":"auth_failure","app":"survey","ip":"203.0.113.8","method":"password","reason":"invalid_credentials"}
+```
+
+时间与服务身份由 journal 提供。不记录密码、会话令牌、Cookie、签名密钥或请求体；未登录/会话过期的 401、跨站拒绝的 403、限流 429、无效 JSON 等不会输出密码失败事件。
+
+默认只使用实际连接 IP，忽略客户端声明的转发地址。只有**连接来自回环地址且 `X-Auth-Proxy-Token` 匹配私有 `AUTH_PROXY_TOKEN`**，才采用合法单一数字地址 `X-Real-IP`。地址链、重复地址头、域名、带 zone 的 IPv6 和 `X-Forwarded-For` 不作为可信 IP；IPv4-mapped IPv6 会统一为 IPv4。登录和问卷提交限流也使用同一个解析结果。
+
+Nginx 必须覆盖而不是透传这些头：`X-Real-IP $remote_addr`、`X-Forwarded-For $remote_addr`、`X-Forwarded-Proto $scheme`、`Host $host` 及私有 `X-Auth-Proxy-Token`。令牌使用独立随机值，只写入权限 600 的服务器环境和 Nginx 私有片段，不能提交到仓库。额外令牌可避免 SSH 隧道客户端仅凭伪造 IP 头触发对他人的误封。
+
+Fail2ban 是独立宿主机服务，应用只产生日志，不执行防火墙命令。代理前的 SSH 隧道连接会记为回环地址，通常应从 Fail2ban 中豁免。若引入 CDN，需另行处理可信代理和封禁位置。
 
 ## 从旧 Supabase 导入
 
