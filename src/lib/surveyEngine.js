@@ -12,7 +12,7 @@ export function isAnswered(question, value) {
     return Array.isArray(value?.value) && value.value.length > 0;
   }
   if (question.type === "singleChoice") {
-    return Boolean(value?.value);
+    return value?.value !== undefined && value?.value !== null && value?.value !== "";
   }
   if (question.type === "rating") {
     return value?.value !== undefined && value?.value !== null && value?.value !== "";
@@ -70,6 +70,9 @@ export function getVisiblePages(survey, answers) {
 }
 
 export function validateQuestion(question, answer) {
+  if (question.type === "dateParts" && answer?.value && Object.values(answer.value).some((value) => String(value).trim()) && !parseAnswerDate(answer)) {
+    return "请填写完整、有效的日期";
+  }
   if (question.required && !isAnswered(question, answer)) {
     return "这道题为必填";
   }
@@ -105,11 +108,10 @@ export function validateQuestion(question, answer) {
 
   const options = question.options ?? [];
   const selectedValues = Array.isArray(answer?.value) ? answer.value : [answer?.value];
-  const optionRequiringText = options.find((option) => option.allowText && selectedValues.includes(option.value));
-
-  if (optionRequiringText) {
-    const textValue = answer.textValue?.[optionRequiringText.value] ?? "";
-    if (!textValue.trim()) {
+  const optionsRequiringText = options.filter((option) => option.allowText && selectedValues.includes(option.value));
+  for (const option of optionsRequiringText) {
+    const textValue = answer.textValue?.[option.value] ?? "";
+    if (typeof textValue !== "string" || !textValue.trim()) {
       return "请补充填写";
     }
   }
@@ -126,11 +128,18 @@ export function validatePage(page, answers) {
 }
 
 export function pruneHiddenAnswers(survey, answers) {
-  const visibleIds = new Set(getVisiblePages(survey, answers).flatMap((page) => page.questions.map((question) => question.id)));
-  return Object.fromEntries(Object.entries(answers).filter(([questionId]) => visibleIds.has(questionId)));
+  let current = answers;
+  // Removing one hidden answer can hide a downstream question as well.
+  for (let pass = 0; pass <= Object.keys(answers).length; pass += 1) {
+    const visibleIds = new Set(getVisiblePages(survey, current).flatMap((page) => page.questions.map((question) => question.id)));
+    const next = Object.fromEntries(Object.entries(current).filter(([questionId]) => visibleIds.has(questionId)));
+    if (Object.keys(next).length === Object.keys(current).length) return next;
+    current = next;
+  }
+  return current;
 }
 
-export function buildResponsePayload({ survey, answers, startedAt }) {
+export function buildResponsePayload({ survey, answers, startedAt, respondentId = crypto.randomUUID() }) {
   const allQuestions = getAllQuestions(survey);
   const visibleQuestions = new Set(
     getVisiblePages(survey, answers).flatMap((page) => page.questions.map((question) => question.id))
@@ -162,7 +171,7 @@ export function buildResponsePayload({ survey, answers, startedAt }) {
     surveyId: survey.id,
     surveyVersion: survey.version,
     respondent: {
-      id: crypto.randomUUID(),
+      id: respondentId,
       source: "public-link",
       userAgent: navigator.userAgent,
       locale: navigator.language
@@ -175,8 +184,8 @@ export function buildResponsePayload({ survey, answers, startedAt }) {
     computedValues,
     skipped,
     metadata: {
-      appVersion: import.meta.env.VITE_APP_VERSION || "0.1.0",
-      storage: "supabase-postgres"
+      appVersion: import.meta.env?.VITE_APP_VERSION || "0.2.0",
+      storage: "server-sqlite"
     }
   };
 }

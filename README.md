@@ -1,265 +1,189 @@
-# Survey Netlify
+# 问卷工作台 · 自有服务器版
 
-一个部署在 Netlify 上的二合一问卷系统：
+`aliyun` 分支使用 **React + Node.js 24 + SQLite**，可部署到阿里云 ECS 或其他 Linux 服务器。
+运行时不需要 Netlify、Supabase、第三方数据库或外部字体服务。后端仅使用 Node 内置模块。
 
-- 管理者访问 `/admin`，输入统一管理密码后创建/编辑问卷、发布/关闭问卷、预览问卷、查看答卷、展开答卷详情、导出 xlsx、删除答卷、复制填写链接和二维码。
-- 被调查者访问 `/s/<slug>` 或扫码进入填写页，提交后由 Netlify Functions 写入 Supabase Postgres。
+## 功能
 
-浏览器不会直接连接 Supabase。所有读写都经过 `netlify/functions/*`，Supabase service role key 只配置在 Netlify 环境变量中。
+- `/admin`：安全登录、问卷搜索、可视化 / JSON 编辑、导入 / 下载问卷定义、发布 / 关闭、预览、链接与二维码。
+- `/s/<slug>`：手机友好的分页填写、条件跳题、日期与自动计算、进度提示、必填检查。
+- 填写草稿仅保存在当前标签页的 `sessionStorage`，24 小时失效，成功提交即清除；网络重试不会重复入库。
+- 答卷：来源筛选、内容搜索、分页、展开详情、xlsx 导出、单份 / 批量删除。
+- 顶部「备份数据」下载完整、可恢复的 JSON；服务器每天生成一致性 SQLite 备份。
+- 管理预览需要同一浏览器的登录会话，预览答卷单独标记。预览链接中**没有管理 token**。
 
-## 本地运行
+## 本地开发
 
-安装依赖：
-
-```bash
-npm install
-```
-
-前端构建验证：
-
-```bash
-npm run build
-```
-
-本地运行前端和 Functions：
+需要 **Node.js 24 LTS**（包含 `node:sqlite`），不支持旧的 Node 18。
 
 ```bash
+npm ci --ignore-scripts
+cp .env.example .env
+# 编辑 .env：设置自己的 ADMIN_PASSWORD 和 AUTH_SECRET
 npm run dev
 ```
 
-只运行 Vite 前端，不运行 Functions：
+前端为 `http://127.0.0.1:5173`，`/api` 代理到本机 `4317` 端口。
 
 ```bash
-npm run dev:vite
+npm test
+npm run build
+npm start
 ```
 
-注意：二合一架构依赖 Netlify Functions。只跑 `dev:vite` 时，公开问卷和管理接口不会工作。
+构建后访问 `http://127.0.0.1:4317/admin`。所有资源由同一个 Node 服务提供，无需开发服务器。
+公开访问需要先创建并发布问卷；应用不会自动创建或发布演示数据。
 
-## Netlify 环境变量
+### 服务端配置
 
-在 Netlify 站点的 `Site configuration -> Environment variables` 添加：
+| 环境变量 | 用途 |
+| --- | --- |
+| `ADMIN_PASSWORD` | 管理密码，建议至少 16 位且不重复使用 |
+| `AUTH_SECRET` | 至少 32 字符的随机会话签名密钥，必须与管理密码不同 |
+| `HOST` | 默认 `127.0.0.1`，只接受本机连接 |
+| `PORT` | 默认 `4317` |
+| `SURVEY_DB_PATH` | 默认 `.data/survey.sqlite`；正式服务使用仓库外路径 |
+| `COOKIE_SECURE` | SSH 隧道预览为 `false`；正式 HTTPS 上线必须改为 `true` |
+| `ENV_FILE` | 可选，指定私有配置文件，而不是项目根目录的 `.env` |
+
+生成签名密钥：
 
 ```bash
-ADMIN_PASSWORD=你的统一管理密码
-NETLIFY_ADMIN_SECRET=一个很长的随机字符串，用来签发管理登录 token
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=你的 Supabase service_role key
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
 
-说明：
+密钥仅放在服务端 `.env` 或 `/etc/survey/survey.env`，权限 `600`。
+**不要使用 `VITE_` 前缀保存任何秘密，不要把真实地址、SSH 配置、密码、数据或凭证写进仓库。**
 
-- `ADMIN_PASSWORD`：管理者在 `/admin` 输入的统一密码。
-- `NETLIFY_ADMIN_SECRET`：只用于签名管理 token，不需要给管理者。
-- `SUPABASE_SERVICE_ROLE_KEY`：只能放在 Netlify 环境变量里，不要放进 `VITE_*` 或前端代码。
+## Linux 部署
 
-## Supabase 建表
+以下都是通用路径和占位示例，不包含任何真实服务器信息。
+仓库可以放在任意目录，部署脚本将只把运行代码和 `dist/` 复制为只读发布版本。
 
-在 Supabase SQL Editor 执行：
+```bash
+# 安装独立 Node 24，不更换服务器现有的系统 Node
+sudo bash deploy/install-node.sh
+export PATH=/opt/survey/runtime/bin:$PATH
 
-```sql
-create extension if not exists pgcrypto;
+npm ci --ignore-scripts
+npm test
+npm run build
 
-create table public.surveys (
-  id uuid primary key default gen_random_uuid(),
-  slug text not null unique,
-  status text not null default 'unpublished' check (status in ('published', 'unpublished')),
-  title text not null,
-  description text not null default '',
-  version integer not null default 1,
-  definition jsonb not null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
+sudo install -d -m 700 /etc/survey
+sudo install -m 600 .env.example /etc/survey/survey.env
+# 编辑 /etc/survey/survey.env，配置真实密码与随机签名密钥，并设置：
+# NODE_ENV=production
+# SURVEY_DB_PATH=/var/lib/survey/survey.sqlite
+# HOST=127.0.0.1
+# COOKIE_SECURE=false
 
-create table public.survey_responses (
-  id uuid primary key default gen_random_uuid(),
-  survey_id uuid not null references public.surveys(id) on delete restrict,
-  survey_version integer not null,
-  respondent_id text,
-  submitted_at timestamptz not null,
-  response jsonb not null,
-  created_at timestamptz not null default now()
-);
-
-create index surveys_slug_status_idx
-  on public.surveys (slug, status);
-
-create index survey_responses_survey_idx
-  on public.survey_responses (survey_id, submitted_at desc);
-
-create or replace function public.set_updated_at()
-returns trigger as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$ language plpgsql;
-
-create trigger surveys_set_updated_at
-before update on public.surveys
-for each row execute function public.set_updated_at();
-
-grant select, insert, update, delete on table public.surveys to service_role;
-grant select, insert, update, delete on table public.survey_responses to service_role;
-grant usage, select on all sequences in schema public to service_role;
+sudo bash deploy/install-service.sh
 ```
 
-可选：开启 RLS。因为本项目通过 service role 从 Netlify Functions 访问，开启 RLS 后也能正常运行：
-
-```sql
-alter table public.surveys enable row level security;
-alter table public.survey_responses enable row level security;
-```
-
-不要给 anon key 开公开读写 policy，公开访问已经由 Netlify Functions 控制。
-
-### Supabase Data API GRANT
-
-Supabase 从 2026-05-30 起，新项目不会再默认把 `public` schema 下的新表暴露给 Data API；既有项目在 2026-10-30 后也会对新表执行这个规则。本项目的 Netlify Functions 使用 `supabase-js` 和 `SUPABASE_SERVICE_ROLE_KEY` 访问 Supabase，因此需要显式授权给 `service_role`。
-
-如果你已经建好表，请在 Supabase SQL Editor 执行：
-
-```sql
-grant select, insert, update, delete on table public.surveys to service_role;
-grant select, insert, update, delete on table public.survey_responses to service_role;
-grant usage, select on all sequences in schema public to service_role;
-```
-
-当前架构不需要给 `anon` 或 `authenticated` 授权，因为浏览器不会直接访问 Supabase 表。
-
-如果你已经按旧版本建过表，执行下面的迁移把状态改为 `published/unpublished`：
-
-```sql
-alter table public.surveys
-drop constraint if exists surveys_status_check;
-
-update public.surveys
-set status = case when status = 'published' then 'published' else 'unpublished' end;
-
-alter table public.surveys
-alter column status set default 'unpublished';
-
-alter table public.surveys
-add constraint surveys_status_check
-check (status in ('published', 'unpublished'));
-```
-
-## 创建第一个问卷
-
-1. 部署到 Netlify。
-2. 打开 `https://你的站点.netlify.app/admin`。
-3. 输入 `ADMIN_PASSWORD`。
-4. 点击“新建问卷”。
-5. 编辑 `Slug`，例如 `customer-feedback-2026`。
-6. 点击“编辑问卷”，可选择可视化编辑或 JSON 编辑。
-7. 点击“发布”。
-8. 如有内容修改，点击“保存”。
-9. 复制填写链接或下载/展示二维码，被调查者访问 `/s/customer-feedback-2026`。
-
-## 管理端功能
-
-- 问卷编辑：支持可视化编辑和 JSON 编辑两种模式，可随时切换。
-- 发布控制：使用“发布/关闭”按钮切换 `published/unpublished` 状态。
-- 管理预览：管理页“预览”不受发布状态限制，预览页也可以提交答卷；公开链接仍只允许已发布问卷访问和提交。
-- 预览答卷：通过预览页提交的答卷同样写入 `survey_responses`，并在 `response.metadata.isPreview` 中标记为 `true`。
-- 答卷查看：答卷列表可点击展开，查看自动计算值和各题中文答案。
-- 答卷导出：支持将当前问卷全部答卷导出为 xlsx。
-- 答卷删除：支持删除单份答卷、删除勾选的多份答卷、清空当前问卷全部答卷。
-- 数据安全：所有管理操作都通过 Netlify Functions 校验管理 token 后访问 Supabase。
-
-## Supabase Heartbeat
-
-为降低 Supabase Free Plan 因长时间无请求而暂停项目的概率，项目内置了 Netlify Scheduled Function：
-
-- 文件：`netlify/functions/heartbeat.js`
-- 频率：`@daily`
-- 操作：每天对 `surveys` 表执行一次轻量 `select id` 请求。
-
-部署到 Netlify 后，Netlify 会按计划触发该函数。也可以手动测试：
+部署布局：
 
 ```text
-https://你的站点.netlify.app/.netlify/functions/heartbeat
+/opt/survey/runtime/       独立 Node 24
+/opt/survey/releases/      只读应用版本（不含配置、数据库或 node_modules）
+/opt/survey/app            指向当前版本的符号链接
+/etc/survey/survey.env     私有配置，600，仅服务管理器读取
+/var/lib/survey/           数据库和备份，700，专用低权限用户拥有
 ```
 
-正常返回示例：
+`survey-workspace.service` 使用专用非 root 用户、只读系统和内存限制，自动启动并在异常退出后重启。
+更新时重新运行构建与部署脚本；数据库不随发布替换，健康检查失败会恢复上一应用版本。
 
-```json
-{
-  "ok": true,
-  "checkedAt": "2026-05-07T00:00:00.000Z",
-  "surveyCount": 1
-}
+```bash
+sudo systemctl status survey-workspace --no-pager
+sudo journalctl -u survey-workspace -n 50 --no-pager
+sudo systemctl list-timers survey-workspace-backup.timer
+curl -fsS http://127.0.0.1:4317/api/health
 ```
 
-这个 heartbeat 是服务端执行的，不依赖用户打开网页。浏览器端定时 fetch 只能在有人访问页面时工作，不能解决完全无人访问时的 pause 问题。
+### 通过 SSH 隧道预览
 
-## 问卷 JSON 格式
+在你的本机执行，`<ssh-alias>` 替换成已有的 SSH 别名：
 
-示例文件：[src/data/survey.example.json](src/data/survey.example.json)
-
-核心字段：
-
-- `id`：问卷业务 ID。
-- `version`：问卷版本，写入每份答卷。
-- `title` / `description`：填写页标题和说明。
-- `pages[].questions[]`：页面和题目。
-- `type`：`singleChoice`、`multipleChoice`、`rating`、`text`、`textarea`。
-- `required`：是否必填。
-- `options[].allowText`：选项后自由填写。
-- `visibleIf`：条件显示，用来实现“回答 A 显示 C，回答 B 跳过 C”。
-- `validation`：正则、多选最少最多项等。
-
-`visibleIf` 支持：
-
-```json
-{ "questionId": "role", "operator": "equals", "value": "developer" }
+```bash
+ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
+  -L 127.0.0.1:4317:127.0.0.1:4317 <ssh-alias>
 ```
 
-也支持组合：
+打开 `http://127.0.0.1:4317/admin`。远端服务和本机隧道都仅监听回环地址，不需要开放安全组端口。
+此时二维码和分享链接只能在隧道所在本机访问，不能直接用于手机或外部受访者。
 
-```json
-{
-  "all": [
-    { "questionId": "satisfaction", "operator": "lte", "value": 3 },
-    { "questionId": "role", "operator": "notEquals", "value": "developer" }
-  ]
-}
+正式公网发布前，配置域名、有效 TLS 证书和反向代理，把 `COOKIE_SECURE` 改为 `true`。
+后端继续保留 `127.0.0.1` 监听。当前限流按直连 IP 计算；反向代理后的大规模收集还应在代理层配置真实客户端限流。
+
+## 从旧 Supabase 导入
+
+保留两张原表的字段：
+
+- `surveys`：`id, slug, status, title, description, version, definition, created_at, updated_at`。
+- `survey_responses`：`id, survey_id, survey_version, respondent_id, submitted_at, response, created_at`。
+- UUID、版本、原始时间字符串、问卷 JSON、答案、跳题、计算结果及其他元信息保持兼容。
+- 唯一有意清除的旧字段是 `response.metadata.previewToken`，避免继续保存旧管理凭证。
+- 新答卷仍为 `custom-survey-response.v1`；新答卷的 `metadata.storage` 为 `server-sqlite`。
+
+### 方案一：读取源 Data API
+
+只在服务器的 `.migration/source.env` 中临时放入旧的 `SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY`。
+这个文件被 Git 忽略；目录权限 `700`、文件 `600`。原有 `.env` 也可作为导入工具的私有源配置。
+
+```bash
+# 先读取源数据、检查约束，但不写入目标库。--output 会保存私有源快照。
+npm run data -- import-supabase --env-file .migration/source.env \
+  --database .migration/check.sqlite --dry-run --output .migration/source.json
+
+# 确认检查结果后，导入正式数据库。导入工具无需管理员登录密码。
+sudo /opt/survey/runtime/bin/node server/manage.js import \
+  --database /var/lib/survey/survey.sqlite --input .migration/source.json
+sudo chown -R survey-workspace:survey-workspace /var/lib/survey
 ```
 
-支持的 operator：
+源 API 分页读取全部记录，不受默认 1000 行上限影响。源凭证不进入运行配置，也不进入前端。
+迁移完成后删除临时的源凭证文件；源快照属于敏感数据，妥善保管，不要提交。
 
-- `answered`
-- `notAnswered`
-- `equals`
-- `notEquals`
-- `includes`
-- `notIncludes`
-- `gt`
-- `gte`
-- `lt`
-- `lte`
+### 方案二：导入 JSON 文件
 
-## 答卷 JSON 格式
+支持完整备份对象 `{ "surveys": [...], "survey_responses": [...] }`，或 Supabase 两张表分别导出的 JSON 数组：
 
-示例文件：[src/data/response.example.json](src/data/response.example.json)
+```bash
+npm run data -- import --input .migration/backup.json --dry-run
+npm run data -- import --surveys .migration/surveys.json \
+  --responses .migration/survey_responses.json
+```
 
-每份答卷会作为 `survey_responses.response` 的 `jsonb` 保存，包含：
+导入采用单事务；外键、唯一性等约束失败会整批回滚。重复导入按原 ID 跳过，**不会覆盖服务器上较新的记录**。
+向非空库导入前自动创建 SQLite 备份。旧站仍在收集时，迁移快照不是持续同步；最终切换应暂停旧站写入，再做最后一次导入。
+旧记录被修改后的覆盖合并需要人工确认，工具不会擅自覆盖。
 
-- `surveyId`：Supabase `surveys.id`。
-- `surveyVersion`：提交时问卷版本。
-- `respondent`：匿名提交者信息。
-- `startedAt` / `submittedAt` / `durationMs`。
-- `answers`：实际回答的问题。
-- `skipped`：因为条件不满足而跳过的问题。
-- `metadata`：应用版本和存储说明。
-- `metadata.isPreview`：是否来自管理预览提交。
-- `metadata.previewToken`：预览提交时使用的管理 token，仅用于服务端校验。
+## 备份与恢复
 
-## 主要文件
+```bash
+npm run data -- verify
+npm run data -- export --output .data/backups/manual.json
+npm run data -- backup
+```
 
-- [src/App.jsx](src/App.jsx)：根据路径切换公开填写页和管理页。
-- [src/components/SurveyRunner.jsx](src/components/SurveyRunner.jsx)：问卷填写引擎。
-- [src/pages/AdminApp.jsx](src/pages/AdminApp.jsx)：管理后台。
-- [src/pages/PublicSurveyPage.jsx](src/pages/PublicSurveyPage.jsx)：公开填写页。
-- [src/lib/surveyEngine.js](src/lib/surveyEngine.js)：条件判断、校验、答卷 payload。
-- [netlify/functions](netlify/functions)：登录、问卷 CRUD、答卷提交与查询。
+生产环境命令加 `--env-file /etc/survey/survey.env` 或 `--database /var/lib/survey/survey.sqlite`。
+默认备份使用 SQLite 在线备份 API，能一致地包含 WAL 内容，**不要在运行时只复制主 `.sqlite` 文件**。
+定时任务每天备份并保留最新 30 份。磁盘内备份不能防范服务器或磁盘整体损坏，重要数据还应加密离线保存。
+
+恢复 JSON 可导入新的空数据库后运行 `verify`，再停服切换数据库路径。
+恢复 SQLite 时先停止服务，把备份放在**新的路径**，设置专用用户所有权和 `600` 权限，更新私有配置后重启。
+保留原库及其 WAL/SHM 文件，不要直接覆盖正在使用的数据库。
+
+## 安全与接口
+
+- 会话保存在 `HttpOnly; SameSite=Strict` cookie 中，12 小时有效，不放在 `localStorage` 或 URL 里。
+- 管理接口均校验会话，写请求验证同源；登录和提交有限流、请求体上限，SQL 使用参数绑定。
+- 发布状态、问卷版本、所有可见页面的必填与题型在服务器再次校验；有答卷的问卷不会被直接级联删除。
+- 管理编辑使用更新时间检测多窗口覆盖；预览答卷不能伪造为未登录的管理预览。
+- 静态文件只暴露构建产物，不暴露源代码、私有配置或数据库。
+- xlsx 生成库按需加载，明确输出文本单元格，不把受访者的字符串当作 Excel 公式。
+- `node_modules/`、构建产物、私有配置和数据库不再纳入 Git 跟踪；不会重写旧分支历史。
+
+API 位于 `/api`：`health`、`admin-session`、`admin-login`、`admin-logout`、`admin-surveys`、`admin-responses`、`admin-backup`、`public-survey`、`submit-response`。
+
+问卷与答卷 JSON 示例仍见 [src/data/survey.example.json](src/data/survey.example.json) 和 [src/data/response.example.json](src/data/response.example.json)。

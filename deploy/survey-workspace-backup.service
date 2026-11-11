@@ -1,0 +1,17 @@
+[Unit]
+Description=Consistent local SQLite backup for Survey workspace
+
+[Service]
+Type=oneshot
+User=survey-workspace
+Group=survey-workspace
+WorkingDirectory=/opt/survey/app
+EnvironmentFile=/etc/survey/survey.env
+ExecStart=/opt/survey/runtime/bin/node server/manage.js backup --output-dir /var/lib/survey/backups --keep 30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/survey
+MemoryMax=192M

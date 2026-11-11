@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useId } from "react";
 import { Plus, Trash2 } from "lucide-react";
 
 const QUESTION_TYPES = [
@@ -63,7 +63,7 @@ export default function VisualSurveyEditor({ definition, onChange }) {
   function addQuestion(pageIndex) {
     const pages = definition.pages.map((page, index) => {
       if (index !== pageIndex) return page;
-      const existingIds = (page.questions || []).map((question) => question.id);
+      const existingIds = definition.pages.flatMap((item) => item.questions || []).map((question) => question.id);
       return {
         ...page,
         questions: [
@@ -246,7 +246,7 @@ function OptionsEditor({ question, onChange }) {
       ...question,
       options: [
         ...options,
-        { value: `option_${options.length + 1}`, label: `选项 ${options.length + 1}` }
+          { value: createSequentialId("option_", options.map((option) => String(option.value))), label: `选项 ${options.length + 1}` }
       ]
     });
   }
@@ -336,7 +336,7 @@ function ConditionEditor({ question, questions, onChange }) {
 
   function updateCondition(patch) {
     const nextCondition = { ...condition, ...patch };
-    if (!nextCondition.operator) {
+    if (Object.hasOwn(patch, "operator") && !patch.operator) {
       const { visibleIf, ...rest } = question;
       onChange(rest);
       return;
@@ -376,7 +376,7 @@ function ConditionEditor({ question, questions, onChange }) {
             className="text-input"
             value={condition.value ?? ""}
             disabled={condition.operator === "answered" || condition.operator === "notAnswered" || !condition.operator}
-            onChange={(event) => updateCondition({ value: coerceConditionValue(event.target.value) })}
+            onChange={(event) => updateCondition({ value: coerceConditionValue(event.target.value, questions.find((item) => item.id === condition.questionId), condition.operator) })}
           />
         </Field>
       </div>
@@ -385,16 +385,22 @@ function ConditionEditor({ question, questions, onChange }) {
 }
 
 function Field({ label, children }) {
+  const generatedId = useId();
+  const id = children.props.id || generatedId;
   return (
-    <label className="visual-field">
-      <span>{label}</span>
-      {children}
-    </label>
+    <div className="visual-field">
+      <label htmlFor={id}>{label}</label>
+      {React.cloneElement(children, { id })}
+    </div>
   );
 }
 
-function coerceConditionValue(value) {
+function coerceConditionValue(value, question, operator) {
   if (value.trim() === "") return "";
+  if (!["gt", "gte", "lt", "lte"].includes(operator) && question?.type !== "rating") {
+    const option = question?.options?.find((item) => String(item.value) === value);
+    return option ? option.value : value;
+  }
   const numeric = Number(value);
   return Number.isNaN(numeric) ? value : numeric;
 }

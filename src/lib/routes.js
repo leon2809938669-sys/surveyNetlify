@@ -7,18 +7,20 @@ export function getRoute() {
   }
 
   if (pathname.startsWith("/s/")) {
-    return { name: "survey", slug: decodeURIComponent(pathname.replace("/s/", "").split("/")[0]) };
+    const value = pathname.replace("/s/", "").split("/")[0];
+    try { return { name: "survey", slug: decodeURIComponent(value) }; }
+    catch { return { name: "survey", slug: value }; }
   }
 
-  return { name: "survey", slug: params.get("survey") || "customer-feedback-2026" };
+  return params.get("survey") ? { name: "survey", slug: params.get("survey") } : { name: "admin" };
 }
 
 export function getPublicSurveyUrl(slug) {
   return `${window.location.origin}/s/${encodeURIComponent(slug)}`;
 }
 
-export function getPreviewSurveyUrl(slug, token) {
+export function getPreviewSurveyUrl(slug) {
   const url = new URL(getPublicSurveyUrl(slug));
-  url.searchParams.set("previewToken", token);
+  url.searchParams.set("preview", "1");
   return url.toString();
 }

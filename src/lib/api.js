@@ -1,89 +1,51 @@
-const FUNCTION_BASE = "/.netlify/functions";
-
 async function request(path, options = {}) {
-  const response = await fetch(`${FUNCTION_BASE}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.token ? { Authorization: `Bearer ${options.token}` } : {})
-    },
-    ...options,
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
-
-  const contentType = response.headers.get("content-type") || "";
-  const isJson = contentType.includes("application/json");
-  const payload = isJson ? await response.json().catch(() => ({})) : {};
-
-  if (!isJson) {
-    throw new Error("Netlify Functions 未运行。请使用 npx netlify dev，或部署到 Netlify 后访问。");
-  }
-
-  if (!response.ok) {
-    throw new Error(payload.error || `请求失败：${response.status}`);
-  }
-  return payload;
-}
-
-export function loginAdmin(password) {
-  return request("/admin-login", {
-    method: "POST",
-    body: { password }
-  });
-}
-
-export function fetchPublicSurvey(slug) {
-  const params = new URLSearchParams({ slug });
-  const previewToken = new URLSearchParams(window.location.search).get("previewToken");
-  if (previewToken) params.set("previewToken", previewToken);
-
-  return request(`/public-survey?${params.toString()}`).then((payload) => {
-    if (!payload.survey) throw new Error("问卷加载失败：服务端没有返回 survey");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch(`/api${path}`, {
+      ...options,
+      credentials: "same-origin",
+      signal: options.signal || controller.signal,
+      headers: { "Content-Type": "application/json", ...options.headers },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body)
+    });
+    if (!response.headers.get("content-type")?.includes("application/json")) throw new Error("服务暂时不可用，请稍后再试");
+    const payload = await response.json();
+    if (!response.ok) {
+      if (response.status === 401 && path !== "/admin-login") window.dispatchEvent(new Event("survey:unauthorized"));
+      const error = new Error(payload.error || `请求失败（${response.status}）`);
+      error.status = response.status;
+      error.details = payload.details;
+      throw error;
+    }
     return payload;
-  });
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("请求超时，请检查连接后重试");
+    if (error instanceof TypeError) throw new Error("无法连接服务器，请检查网络或 SSH 隧道");
+    throw error;
+  } finally { clearTimeout(timeout); }
+}
+
+export const loginAdmin = (password) => request("/admin-login", { method: "POST", body: { password } });
+export const fetchAdminSession = () => request("/admin-session");
+export const logoutAdmin = () => request("/admin-logout", { method: "POST", body: {} });
+export const fetchAdminSurveys = () => request("/admin-surveys");
+export const fetchAdminBackup = () => request("/admin-backup");
+export const saveAdminSurvey = (survey) => request("/admin-surveys", { method: survey.id ? "PUT" : "POST", body: { survey } });
+export const deleteAdminSurvey = (id) => request(`/admin-surveys?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+export const fetchAdminResponses = (surveyId) => request(`/admin-responses?surveyId=${encodeURIComponent(surveyId)}`);
+export const deleteAdminResponses = (surveyId, ids) => request(`/admin-responses?surveyId=${encodeURIComponent(surveyId)}`, { method: "DELETE", body: { ids } });
+export const clearAdminResponses = (surveyId) => request(`/admin-responses?surveyId=${encodeURIComponent(surveyId)}`, { method: "DELETE", body: { all: true } });
+
+export function fetchPublicSurvey(slug, isPreview = false) {
+  const params = new URLSearchParams({ slug });
+  if (isPreview) params.set("preview", "1");
+  return request(`/public-survey?${params}`);
 }
 
 export function submitPublicResponse(response) {
   return request("/submit-response", {
-    method: "POST",
-    body: { response }
-  });
-}
-
-export function fetchAdminSurveys(token) {
-  return request("/admin-surveys", { token });
-}
-
-export function saveAdminSurvey(token, survey) {
-  return request("/admin-surveys", {
-    method: survey.id ? "PUT" : "POST",
-    token,
-    body: { survey }
-  });
-}
-
-export function deleteAdminSurvey(token, id) {
-  return request(`/admin-surveys?id=${encodeURIComponent(id)}`, {
-    method: "DELETE",
-    token
-  });
-}
-
-export function fetchAdminResponses(token, surveyId) {
-  return request(`/admin-responses?surveyId=${encodeURIComponent(surveyId)}`, { token });
-}
-
-export function deleteAdminResponses(token, surveyId, ids) {
-  return request(`/admin-responses?surveyId=${encodeURIComponent(surveyId)}`, {
-    method: "DELETE",
-    token,
-    body: { ids }
-  });
-}
-
-export function clearAdminResponses(token, surveyId) {
-  return request(`/admin-responses?surveyId=${encodeURIComponent(surveyId)}`, {
-    method: "DELETE",
-    token,
-    body: { all: true }
+    method: "POST", body: { response },
+    headers: response.respondent?.id ? { "Idempotency-Key": response.respondent.id } : {}
   });
 }
