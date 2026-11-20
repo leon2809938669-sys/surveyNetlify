@@ -209,4 +209,6 @@ API 位于 `/api`：`health`、`admin-session`、`admin-login`、`admin-logout`�
 
 选项整行可点选，选框为 20px，输入框、评分及主要操作按钮的高度至少 48px。长题目、选项和按钮文案可换行；日期选择器、进度提示和操作区在空间不足时自动换行。保留浏览器缩放，填写页不设置最大缩放限制。
 
+管理员答卷区在 1050px 及以下宽度改用纵向卡片，可直接展开整份答案；较宽屏幕保留表格。列表、搜索和筛选默认 16px，详情题目为 16px、答案为 18px，补充说明为 16px；统计与分页等辅助文字为 14px。字号使用 `rem`，长答案、答卷标识和补充说明可换行，详情在窄屏显示为单列。勾选标签、详情、删除、刷新和翻页等操作区域至少 48px。
+
 问卷与答卷 JSON 示例仍见 [src/data/survey.example.json](src/data/survey.example.json) 和 [src/data/response.example.json](src/data/response.example.json)。
