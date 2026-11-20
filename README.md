@@ -203,4 +203,10 @@ npm run data -- backup
 
 API 位于 `/api`：`health`、`admin-session`、`admin-login`、`admin-logout`、`admin-surveys`、`admin-responses`、`admin-backup`、`public-survey`、`submit-response`。
 
+## 手机阅读与填写
+
+公共填写页与管理预览使用相同的阅读样式：题目默认 18px，正文、选项、输入框及操作按钮默认 16px，进度与辅助提示默认 14px。字号使用 `rem`，随浏览器默认字号调整；手机断点只调整布局和间距，不再缩小文字。
+
+选项整行可点选，选框为 20px，输入框、评分及主要操作按钮的高度至少 48px。长题目、选项和按钮文案可换行；日期选择器、进度提示和操作区在空间不足时自动换行。保留浏览器缩放，填写页不设置最大缩放限制。
+
 问卷与答卷 JSON 示例仍见 [src/data/survey.example.json](src/data/survey.example.json) 和 [src/data/response.example.json](src/data/response.example.json)。
