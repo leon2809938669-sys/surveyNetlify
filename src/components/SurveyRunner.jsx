@@ -3,6 +3,8 @@ import { ArrowLeft, ArrowRight, Check, CheckCircle2, Loader2, RotateCcw, Send, S
 import {
   buildResponsePayload,
   computeSurveyValues,
+  getBirthDateWarning,
+  getDatePartsBounds,
   getVisiblePages,
   isAnswered,
   pruneHiddenAnswers,
@@ -31,6 +33,7 @@ export default function SurveyRunner({ survey, onSubmit, isPreview = false }) {
   const respondentId = useRef(draft?.respondentId || crypto.randomUUID());
   const submitting = useRef(false);
   const completionHeading = useRef(null);
+  const confirmedBirthDates = useRef(new Map());
 
   useEffect(() => {
     if (submission.status === "submitted") return;
@@ -51,19 +54,37 @@ export default function SurveyRunner({ survey, onSubmit, isPreview = false }) {
   const offset = visiblePages.slice(0, boundedPageIndex).reduce((sum, page) => sum + page.questions.length, 0);
 
   function focusError(pageErrors, pageIndex) {
-    setErrors(pageErrors); setCurrentPageIndex(pageIndex);
+    setErrors(pageErrors);
+    focusQuestion(Object.keys(pageErrors)[0], pageIndex);
+  }
+  function focusQuestion(questionId, pageIndex) {
+    setCurrentPageIndex(pageIndex);
     requestAnimationFrame(() => {
-      const field = document.getElementById(`field-${Object.keys(pageErrors)[0]}`);
+      const field = document.getElementById(`field-${questionId}`);
       field?.focus({ preventScroll: true }); field?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
+  }
+  function confirmBirthDates(page) {
+    for (const question of page.questions) {
+      const warning = getBirthDateWarning(question, answers[question.id]);
+      if (!warning) continue;
+      const value = JSON.stringify(answers[question.id]?.value);
+      if (confirmedBirthDates.current.get(question.id) === value) continue;
+      const [year, month, day] = warning.date.split("-").map(Number);
+      if (!window.confirm(`请核对出生日期：${year}年${month}月${day}日。\n\n按今天计算，孩子已满${warning.ageYears}周岁，超过${warning.thresholdYears}岁及以内的年龄范围。\n\n如日期无误，请点击“确定”继续填写；如需修改，请点击“取消”返回。`)) return question.id;
+      confirmedBirthDates.current.set(question.id, value);
+    }
+    return null;
   }
   function restart() {
     if (!window.confirm("确定清除本标签页的填写草稿并重新开始吗？")) return;
     respondentId.current = crypto.randomUUID(); setStartedAt(new Date().toISOString());
+    confirmedBirthDates.current.clear();
     setAnswers({}); setCurrentPageIndex(0); setErrors({}); setResumed(false); setSubmission({ status: "idle", message: "" });
   }
 
   function updateAnswer(question, nextAnswer) {
+    confirmedBirthDates.current.delete(question.id);
     setErrors((current) => ({ ...current, [question.id]: "" }));
     setAnswers((current) => pruneHiddenAnswers(survey, { ...current, [question.id]: nextAnswer }));
   }
@@ -77,6 +98,8 @@ export default function SurveyRunner({ survey, onSubmit, isPreview = false }) {
     const pageErrors = validatePage(currentPage, answers);
     if (Object.keys(pageErrors).length > 0) return focusError(pageErrors, boundedPageIndex);
     setErrors({});
+    const unconfirmed = confirmBirthDates(currentPage);
+    if (unconfirmed) return focusQuestion(unconfirmed, boundedPageIndex);
     setCurrentPageIndex((index) => Math.min(visiblePages.length - 1, index + 1));
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -86,6 +109,10 @@ export default function SurveyRunner({ survey, onSubmit, isPreview = false }) {
     for (let index = 0; index < visiblePages.length; index += 1) {
       const pageErrors = validatePage(visiblePages[index], answers);
       if (Object.keys(pageErrors).length > 0) return focusError(pageErrors, index);
+    }
+    for (let index = 0; index < visiblePages.length; index += 1) {
+      const unconfirmed = confirmBirthDates(visiblePages[index]);
+      if (unconfirmed) return focusQuestion(unconfirmed, index);
     }
     setErrors({}); submitting.current = true;
 
@@ -214,7 +241,7 @@ function QuestionField({ question, number, answer = {}, error, onChange }) {
 
       {question.type === "rating" && <RatingField question={question} answer={answer} onChange={onChange} />}
 
-      {question.type === "dateParts" && <DatePartsField question={question} answer={answer} onChange={onChange} />}
+      {question.type === "dateParts" && <DatePartsField question={question} answer={answer} error={error} onChange={onChange} />}
 
       {question.type === "text" && (
         <input
@@ -264,56 +291,55 @@ function ComputedFieldsPanel({ fields, values }) {
   );
 }
 
-function DatePartsField({ question, answer = {}, onChange }) {
+function DatePartsField({ question, answer = {}, error, onChange }) {
   const value = answer.value || {};
+  const { min, max } = getDatePartsBounds(question);
+  const firstYear = Number(min.slice(0, 4));
+  const lastYear = Number(max.slice(0, 4));
+  const years = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => lastYear - index);
+  const monthPrefix = (year, month) => `${year}-${String(month).padStart(2, "0")}`;
+  const monthsFor = (year) => year ? Array.from({ length: 12 }, (_, index) => index + 1)
+    .filter((month) => monthPrefix(year, month) >= min.slice(0, 7) && monthPrefix(year, month) <= max.slice(0, 7)) : [];
+  const daysFor = (year, month) => year && month ? Array.from({ length: new Date(Number(year), Number(month), 0).getDate() }, (_, index) => index + 1)
+    .filter((day) => {
+      const date = `${monthPrefix(year, month)}-${String(day).padStart(2, "0")}`;
+      return date >= min && date <= max;
+    }) : [];
+  const year = years.includes(Number(value.year)) ? String(Number(value.year)) : "";
+  const months = monthsFor(year);
+  const month = months.includes(Number(value.month)) ? String(Number(value.month)) : "";
+  const days = daysFor(year, month);
+  const day = days.includes(Number(value.day)) ? String(Number(value.day)) : "";
+  const confirmAboveAgeYears = question.validation?.confirmAboveAgeYears;
+  const hintId = `date-hint-${question.id}`;
 
   function updatePart(part, nextValue) {
-    const cleaned = nextValue.replace(/[^\d]/g, "");
-    onChange({
-      value: {
-        ...value,
-        [part]: cleaned
-      }
-    });
+    const next = { year, month, day, [part]: nextValue };
+    if (!monthsFor(next.year).includes(Number(next.month))) next.month = "";
+    if (!daysFor(next.year, next.month).includes(Number(next.day))) next.day = "";
+    onChange({ value: next });
   }
 
-  return (
-    <div className="date-parts" aria-label={question.title}>
-      <label>
-        年
-        <input
-          className="text-input"
-          inputMode="numeric"
-          maxLength={4}
-          value={value.year || ""}
-          placeholder="2024"
-          onChange={(event) => updatePart("year", event.target.value)}
-        />
-      </label>
-      <label>
-        月
-        <input
-          className="text-input"
-          inputMode="numeric"
-          maxLength={2}
-          value={value.month || ""}
-          placeholder="6"
-          onChange={(event) => updatePart("month", event.target.value)}
-        />
-      </label>
-      <label>
-        日
-        <input
-          className="text-input"
-          inputMode="numeric"
-          maxLength={2}
-          value={value.day || ""}
-          placeholder="21"
-          onChange={(event) => updatePart("day", event.target.value)}
-        />
-      </label>
+  return <div className="date-question">
+    <div className="date-parts">
+      {[
+        { part: "year", label: "年", selected: year, options: years, disabled: false },
+        { part: "month", label: "月", selected: month, options: months, disabled: !year },
+        { part: "day", label: "日", selected: day, options: days, disabled: !month }
+      ].map(({ part, label, selected, options, disabled }) => <label key={part}>
+        {label}
+        <select className="text-input" value={selected} disabled={disabled} required={question.required}
+          aria-invalid={!!error} aria-describedby={`${hintId}${error ? ` error-${question.id}` : ""}`}
+          onChange={(event) => updatePart(part, event.target.value)}>
+          <option value="">选择{label}</option>
+          {options.map((option) => <option key={option} value={String(option)}>{option}{label}</option>)}
+        </select>
+      </label>)}
     </div>
-  );
+    <p className="date-selection-hint" id={hintId}>{Number.isInteger(confirmAboveAgeYears)
+      ? `请选择实际出生日期；已满${confirmAboveAgeYears + 1}周岁时，继续填写前会请您确认。`
+      : "请依次选择年、月、日。"}</p>
+  </div>;
 }
 
 function ChoiceList({ question, answer = {}, multiple, onChange }) {

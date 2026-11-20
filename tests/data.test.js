@@ -6,8 +6,9 @@ import { test } from "node:test";
 import { createBackup } from "../server/backups.js";
 import { exportSnapshot, importSnapshot, openDatabase } from "../server/database.js";
 import { validateDefinition } from "../src/lib/definition.js";
-import { computeSurveyValues, isAnswered, pruneHiddenAnswers, validateQuestion } from "../src/lib/surveyEngine.js";
+import { computeSurveyValues, getBirthDateWarning, getDatePartsBounds, isAnswered, pruneHiddenAnswers, validateQuestion } from "../src/lib/surveyEngine.js";
 import { flattenResponse, formatAnswerValue } from "../src/lib/responses.js";
+import { validateResponse } from "../server/validation.js";
 
 const snapshot = {
   surveys: [{ id: "original-survey-id", slug: "original-survey", status: "published", title: "原始问卷", description: "说明", version: 3,
@@ -85,6 +86,64 @@ test("computed date fields remain compatible", () => {
   const values = computeSurveyValues({ computedFields: [{ id: "months", type: "monthsBetween", label: "月龄", fromQuestionId: "birth", to: "currentDate" }] },
     { birth: { value: { year: "2024", month: "1", day: "15" } } }, new Date(2026, 0, 14));
   assert.equal(values.months.value, 23);
+});
+
+const birthQuestion = { id: "birth", type: "dateParts", title: "出生日期", required: true, validation: { confirmAboveAgeYears: 6 } };
+function dateAnswer(iso) {
+  const [year, month, day] = iso.split("-");
+  return { value: { year, month, day } };
+}
+
+test("birth dates allow older ages with a warning, while future and impossible dates remain invalid", () => {
+  const now = new Date("2026-11-18T04:00:00Z");
+  assert.deepEqual(getDatePartsBounds(birthQuestion, now), { min: "1900-01-01", max: "2026-11-18" });
+  for (const iso of ["2018-12-01", "2019-11-18", "2019-11-19", "2020-11-18", "2026-11-18"]) {
+    assert.equal(validateQuestion(birthQuestion, dateAnswer(iso), now), "");
+  }
+  for (const iso of ["2019-11-19", "2020-11-18", "2026-11-18"]) {
+    assert.equal(getBirthDateWarning(birthQuestion, dateAnswer(iso), now), null);
+  }
+  assert.deepEqual(getBirthDateWarning(birthQuestion, dateAnswer("2019-11-18"), now),
+    { ageYears: 7, thresholdYears: 6, date: "2019-11-18" });
+  assert.equal(getBirthDateWarning(birthQuestion, dateAnswer("2018-12-01"), now).ageYears, 7);
+  assert.match(validateQuestion(birthQuestion, dateAnswer("2026-11-19"), now), /不能晚于今天/);
+  assert.equal(validateQuestion(birthQuestion, undefined, now), "请选择年、月、日");
+  assert.match(validateQuestion(birthQuestion, { value: { year: "2024", month: "", day: "" } }, now), /完整/);
+  assert.match(validateQuestion(birthQuestion, dateAnswer("2024-02-30"), now), /有效/);
+});
+
+test("birth age warnings handle leap days and change at midnight in China across runtime time zones", () => {
+  assert.equal(getBirthDateWarning(birthQuestion, dateAnswer("2017-03-01"), new Date("2024-02-29T04:00:00Z")), null);
+  assert.equal(getBirthDateWarning(birthQuestion, dateAnswer("2017-02-28"), new Date("2024-02-29T04:00:00Z")).ageYears, 7);
+  assert.equal(getBirthDateWarning(birthQuestion, dateAnswer("2020-02-29"), new Date("2027-02-28T04:00:00Z")), null);
+  assert.equal(getBirthDateWarning(birthQuestion, dateAnswer("2020-02-29"), new Date("2027-03-01T04:00:00Z")).ageYears, 7);
+  assert.equal(validateQuestion(birthQuestion, dateAnswer("2020-02-29"), new Date("2027-02-28T04:00:00Z")), "");
+  assert.equal(getDatePartsBounds(birthQuestion, new Date("2026-11-17T15:59:59Z")).max, "2026-11-17");
+  assert.equal(getDatePartsBounds(birthQuestion, new Date("2026-11-17T16:00:00Z")).max, "2026-11-18");
+});
+
+test("birth age settings reject invalid configurations and unsupported question types", () => {
+  for (const confirmAboveAgeYears of [-1, 6.5, "6", 121]) {
+    const question = { ...birthQuestion, validation: { confirmAboveAgeYears } };
+    assert.throws(() => validateDefinition({ title: "问卷", pages: [{ id: "p", questions: [question] }] }), /年龄确认/);
+  }
+  assert.throws(() => validateDefinition({ title: "问卷", pages: [{ id: "p", questions: [{ ...birthQuestion, type: "text" }] }] }), /年龄确认/);
+});
+
+test("server accepts confirmed older children and rejects future or impossible dates when bypassing the picker", () => {
+  const definition = { title: "出生日期校验", pages: [{ id: "p", questions: [birthQuestion] }] };
+  const survey = { id: "isolated-birth-validation", version: 1, definition };
+  const { min, max } = getDatePartsBounds(birthQuestion);
+  const input = (iso) => ({
+    surveyVersion: 1, startedAt: new Date().toISOString(),
+    answers: [{ questionId: "birth", type: "dateParts", ...dateAnswer(iso) }]
+  });
+  assert.equal(validateResponse(input(min), survey, false).answers[0].value.year, min.slice(0, 4));
+  assert.equal(validateResponse(input(max), survey, false).metadata.storage, "server-sqlite");
+  assert.ok(validateResponse(input("2018-01-01"), survey, false));
+  for (const iso of ["1899-12-31", "2100-12-31", `${max.slice(0, 4)}-02-30`]) {
+    assert.throws(() => validateResponse(input(iso), survey, false), error => error.status === 400 && Boolean(error.details?.birth));
+  }
 });
 
 test("cascading hidden answers are pruned before dependent conditions are evaluated", () => {

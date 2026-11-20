@@ -36,6 +36,12 @@ export function validateDefinition(definition) {
         const { min, max } = question.scale || {};
         if (!Number.isInteger(min) || !Number.isInteger(max) || max < min || max - min > 20) throw new Error("评分范围无效（最多 21 档）");
       }
+      if (question.validation?.confirmAboveAgeYears !== undefined) {
+        const age = question.validation.confirmAboveAgeYears;
+        if (question.type !== "dateParts" || !Number.isInteger(age) || age < 0 || age > 120) {
+          throw new Error("出生日期年龄确认阈值必须为 0–120 的整数，且仅适用于年月日题型");
+        }
+      }
       if (question.validation?.pattern) {
         if (typeof question.validation.pattern !== "string" || question.validation.pattern.length > 256) throw new Error("校验正则过长");
         try { new RegExp(question.validation.pattern); } catch { throw new Error("题目校验正则不正确"); }

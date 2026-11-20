@@ -187,6 +187,10 @@ function QuestionEditor({ definition, question, onChange, onRemove }) {
     if (type === "rating" && !nextQuestion.scale) {
       nextQuestion.scale = { min: 1, max: 5, minLabel: "低", maxLabel: "高" };
     }
+    if (type !== "dateParts" && nextQuestion.validation?.confirmAboveAgeYears !== undefined) {
+      nextQuestion.validation = { ...nextQuestion.validation };
+      delete nextQuestion.validation.confirmAboveAgeYears;
+    }
     onChange(nextQuestion);
   }
 
@@ -225,6 +229,16 @@ function QuestionEditor({ definition, question, onChange, onRemove }) {
       )}
 
       {question.type === "rating" && <RatingEditor question={question} onChange={onChange} />}
+
+      {question.type === "dateParts" && <label className="checkbox-field">
+        <input type="checkbox" checked={question.validation?.confirmAboveAgeYears === 6} onChange={(event) => {
+          const validation = { ...question.validation };
+          if (event.target.checked) validation.confirmAboveAgeYears = 6;
+          else delete validation.confirmAboveAgeYears;
+          update({ validation });
+        }} />
+        出生日期：已满7周岁需确认，不能选择未来日期
+      </label>}
 
       {needsOptions && <OptionsEditor question={question} onChange={onChange} />}
 

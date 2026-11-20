@@ -69,12 +69,42 @@ export function getVisiblePages(survey, answers) {
     .filter((page) => page.questions.length > 0);
 }
 
-export function validateQuestion(question, answer) {
+export function getDatePartsBounds(question, now = new Date()) {
+  return {
+    min: "1900-01-01",
+    max: Number.isInteger(question.validation?.confirmAboveAgeYears) ? formatIsoDate(getClinicDate(now)) : "2100-12-31"
+  };
+}
+
+function getClinicDate(now) {
+  // The clinic's calendar date stays the same for the browser and the server.
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(now);
+  const getPart = (type) => Number(parts.find((part) => part.type === type).value);
+  const year = getPart("year");
+  const month = getPart("month");
+  const day = getPart("day");
+  return new Date(year, month - 1, day);
+}
+
+export function getBirthDateWarning(question, answer, now = new Date()) {
+  const thresholdYears = question.validation?.confirmAboveAgeYears;
+  if (!Number.isInteger(thresholdYears)) return null;
+  const birth = parseAnswerDate(answer);
+  if (!birth) return null;
+  const today = getClinicDate(now);
+  let ageYears = today.getFullYear() - birth.getFullYear();
+  if (today.getMonth() < birth.getMonth() || (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())) ageYears -= 1;
+  return ageYears > thresholdYears ? { ageYears, thresholdYears, date: formatIsoDate(birth) } : null;
+}
+
+export function validateQuestion(question, answer, now = new Date()) {
   if (question.type === "dateParts" && answer?.value && Object.values(answer.value).some((value) => String(value).trim()) && !parseAnswerDate(answer)) {
-    return "请填写完整、有效的日期";
+    return "请选择完整、有效的日期";
   }
   if (question.required && !isAnswered(question, answer)) {
-    return "这道题为必填";
+    return question.type === "dateParts" ? "请选择年、月、日" : "这道题为必填";
   }
 
   if (!isAnswered(question, answer)) return "";
@@ -82,7 +112,14 @@ export function validateQuestion(question, answer) {
   if (question.type === "dateParts") {
     const parsedDate = parseAnswerDate(answer);
     if (!parsedDate) {
-      return "请填写有效日期";
+      return "请选择有效日期";
+    }
+    const { min, max } = getDatePartsBounds(question, now);
+    const date = formatIsoDate(parsedDate);
+    if (date < min || date > max) {
+      return Number.isInteger(question.validation?.confirmAboveAgeYears)
+        ? "出生日期不能晚于今天，请重新选择"
+        : "请选择允许范围内的日期";
     }
   }
 
@@ -119,9 +156,9 @@ export function validateQuestion(question, answer) {
   return "";
 }
 
-export function validatePage(page, answers) {
+export function validatePage(page, answers, now = new Date()) {
   return page.questions.reduce((errors, question) => {
-    const error = validateQuestion(question, answers[question.id]);
+    const error = validateQuestion(question, answers[question.id], now);
     if (error) errors[question.id] = error;
     return errors;
   }, {});
